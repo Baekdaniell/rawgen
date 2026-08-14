@@ -1,0 +1,21 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "rawgen",
+  "outputfilename": "rawgen",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "http://localhost:5173",
+  "author": {
+    "name": "Daniell",
+    "email": ""
+  },
+  "info": {
+    "companyName": "",
+    "productName": "rawgen",
+    "productVersion": "0.3.0",
+    "copyright": "Copyright 2026",
+    "comments": "MK119 stats verification raw data generator (OQT-325)"
+  }
+}
+

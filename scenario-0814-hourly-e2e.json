@@ -1,0 +1,17 @@
+{
+  "name": "hourly-e2e-0814",
+  "checkpointIds": [390494, 390497, 390499],
+  "startDate": "2026-08-14",
+  "endDate": "2026-08-14",
+  "timezone": "Asia/Seoul",
+  "intervalSec": 60,
+  "daily": { "min": 900, "max": 1500, "avg": 1200 },
+  "hourlyOverrides": [
+    { "hour": 3, "mode": "null" },
+    { "hour": 4, "mode": "goal", "goal": { "min": 1234.5, "max": 1234.5, "avg": 1234.5 } },
+    { "hour": 6, "mode": "goal", "goal": { "min": 100, "max": 200, "avg": 150 } }
+  ],
+  "seed": 20260814,
+  "batchSize": 5000,
+  "driverCode": "numeric_raw"
+}

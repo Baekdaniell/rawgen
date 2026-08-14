@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rawgen</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">RG</div>
+          <div>
+            <h1>rawgen</h1>
+            <p>MK119 통계 검증용 raw data 생성기 (OQT-325)</p>
+          </div>
+        </div>
+
+        <nav class="steps" aria-label="sections">
+          <button class="step active" data-section="connections">1. Connections</button>
+          <button class="step" data-section="targets">2. Targets</button>
+          <button class="step" data-section="scenario">3. Scenario</button>
+          <button class="step" data-section="preview">4. Preview</button>
+          <button class="step" data-section="generate">5. Generate</button>
+          <button class="step" data-section="regen">6. Regenerate</button>
+          <button class="step" data-section="verify">7. Verify</button>
+          <button class="step" data-section="e2e">8. E2E 자동</button>
+          <button class="step" data-section="report">9. Report</button>
+        </nav>
+
+        <section class="side-panel">
+          <h2>현재 프로파일</h2>
+          <p id="sideProfile" class="hint">선택 안 됨</p>
+          <p id="sideTestOnly" class="hint"></p>
+          <p id="sideBusy" class="hint"></p>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h2 id="sectionTitle">Connections</h2>
+            <p id="sectionSubtitle">DB 연결 프로파일을 만들고 테스트합니다.</p>
+          </div>
+        </header>
+
+        <div id="errorStrip" class="error-strip" style="display: none">
+          <span id="errorText"></span>
+          <button id="errorClose" class="error-close">닫기</button>
+        </div>
+
+        <!-- 1. Connections -->
+        <section id="connections" class="section active">
+          <div class="grid two">
+            <article class="panel">
+              <div class="panel-header">
+                <h3>프로파일</h3>
+                <div>
+                  <button id="newProfile" class="secondary small">새로 만들기</button>
+                  <button id="exportProfiles" class="secondary small">내보내기(비밀번호 제외)</button>
+                </div>
+              </div>
+              <label>
+                저장된 프로파일
+                <select id="profileSelect"></select>
+              </label>
+              <label>
+                이름
+                <input id="pfName" type="text" placeholder="qa-koscom" />
+              </label>
+              <label class="toggle">
+                <input id="pfTestOnly" type="checkbox" />
+                <span>TestOnly (테스트 DB 확인됨 — 이 프로파일에서만 INSERT 허용)</span>
+              </label>
+              <label>
+                timezone
+                <input id="pfTimezone" type="text" value="Asia/Seoul" />
+              </label>
+              <div class="top-actions">
+                <button id="saveProfile" class="primary">저장</button>
+                <button id="deleteProfile" class="secondary">삭제</button>
+              </div>
+            </article>
+
+            <article class="panel">
+              <h3>MariaDB</h3>
+              <div class="field-row">
+                <label>host <input id="pfMariaHost" type="text" placeholder="172.17.88.2" /></label>
+                <label>port <input id="pfMariaPort" type="number" value="3306" /></label>
+              </div>
+              <div class="field-row">
+                <label>database <input id="pfMariaDb" type="text" value="liz" /></label>
+                <label>user <input id="pfMariaUser" type="text" /></label>
+              </div>
+              <label>password <input id="pfMariaPw" type="password" /></label>
+              <button id="testMaria" class="secondary">MariaDB 연결 테스트</button>
+
+              <h3 style="margin-top: 18px">ClickHouse (native :9000)</h3>
+              <div class="field-row">
+                <label>host <input id="pfChHost" type="text" placeholder="172.17.88.2" /></label>
+                <label>port <input id="pfChPort" type="number" value="9000" /></label>
+              </div>
+              <div class="field-row">
+                <label>database <input id="pfChDb" type="text" value="liz" /></label>
+                <label>user <input id="pfChUser" type="text" value="default" /></label>
+              </div>
+              <label>password <input id="pfChPw" type="password" /></label>
+              <button id="testCh" class="secondary">ClickHouse 연결 테스트</button>
+            </article>
+          </div>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h3>Schema Discovery</h3>
+              <button id="discover" class="secondary small">스키마 확인</button>
+            </div>
+            <p class="hint">checkvalue/MV 컬럼, Replicated 여부, exclude_date 등재, 복제 지연을 확인합니다.</p>
+            <pre id="discoverOut" class="codebox">프로파일 저장 후 실행하세요.</pre>
+          </article>
+        </section>
+
+        <!-- 2. Targets -->
+        <section id="targets" class="section">
+          <article class="panel">
+            <div class="panel-header">
+              <h3>Checkpoint 검색</h3>
+              <div class="top-actions">
+                <input id="cpSearch" type="text" placeholder="id 또는 이름 (Enter로 조회)" style="width: 220px" />
+                <button id="cpLoad" class="secondary small">조회</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th style="width:60px">선택</th><th>id</th><th>이름</th><th>driver</th><th>enabled</th></tr>
+                </thead>
+                <tbody id="cpRows"><tr><td colspan="5" class="hint">프로파일 연결 후 조회하세요.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h3>선택된 대상</h3>
+              <div class="top-actions">
+                <input id="cpManual" type="number" placeholder="checkpoint_id 직접 입력 (Enter로 추가)" style="width: 240px" />
+                <button id="cpAdd" class="secondary small">추가</button>
+              </div>
+            </div>
+            <p class="hint">전용 QA checkpoint 대역을 권장합니다. 주입한 (날짜, cp)는 다른 검증의 클린 대조 기준으로 쓸 수 없습니다.</p>
+            <div id="cpSelected" class="status-strip"></div>
+          </article>
+        </section>
+
+        <!-- 3. Scenario -->
+        <section id="scenario" class="section">
+          <div class="grid two">
+            <article class="panel">
+              <h3>Date & Sampling</h3>
+              <div class="field-row">
+                <label>시작 날짜 <input id="startDate" type="date" /></label>
+                <label>종료 날짜 <input id="endDate" type="date" /></label>
+              </div>
+              <div class="field-row">
+                <label>
+                  수집 주기
+                  <select id="intervalSec">
+                    <option value="1">1초</option>
+                    <option value="10" selected>10초</option>
+                    <option value="30">30초</option>
+                    <option value="60">60초</option>
+                  </select>
+                </label>
+                <label>
+                  driver_code
+                  <select id="driverCode">
+                    <option value="numeric_raw">numeric_raw</option>
+                    <option value="numeric_percent" selected>numeric_percent</option>
+                  </select>
+                </label>
+              </div>
+              <div class="field-row">
+                <label>seed <input id="seed" type="number" value="325" /></label>
+                <label>batch size <input id="batchSize" type="number" value="100000" /></label>
+              </div>
+              <p class="hint">보존 창: 오늘 기준 13일 이내 날짜만 실환경 검증이 가능합니다 (checkvalue 파티션·daily_stats TTL = 14일). Ctrl+Enter로 바로 Preview를 실행합니다.</p>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <h3>Daily Goal</h3>
+                <span class="badge">일 평균 = count 가중평균</span>
+              </div>
+              <div class="field-row three">
+                <label>min <input id="dailyMin" type="number" step="0.001" value="20" /></label>
+                <label>max <input id="dailyMax" type="number" step="0.001" value="40" /></label>
+                <label>avg <input id="dailyAvg" type="number" step="0.001" value="30" /></label>
+              </div>
+              <div class="panel-header">
+                <h3>Hourly Overrides</h3>
+                <button id="addHour" class="secondary small">시간대 추가</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>CH hour</th><th>daily col</th><th>mode</th><th>min</th><th>max</th><th>avg</th><th></th></tr>
+                  </thead>
+                  <tbody id="hourRows"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h3>시나리오 JSON</h3>
+              <div>
+                <button id="scnLoad" class="secondary small">불러오기</button>
+                <button id="scnSave" class="secondary small">파일로 저장</button>
+                <button id="copyScenario" class="secondary small">복사</button>
+              </div>
+            </div>
+            <p class="hint">파일로 저장해 두면 나중에 '불러오기'로 같은 검증(동일 seed·기대값)을 그대로 재현할 수 있습니다. 마지막 시나리오는 앱 재시작 시 자동 복원됩니다.</p>
+            <pre id="scenarioJson" class="codebox" style="min-height: 120px"></pre>
+          </article>
+        </section>
+
+        <!-- 4. Preview -->
+        <section id="preview" class="section">
+          <div class="top-actions" style="margin-bottom: 16px">
+            <button id="runPreview" class="primary">Preview 실행 (dry-run, DB 미접근)</button>
+          </div>
+          <div class="grid summary-grid">
+            <article class="metric"><span>Total Rows</span><strong id="metricRows">-</strong></article>
+            <article class="metric"><span>대상 (cp × 날짜)</span><strong id="metricDays">-</strong></article>
+            <article class="metric"><span>경고</span><strong id="metricWarnings">-</strong></article>
+            <article class="metric"><span>batch 수(예상)</span><strong id="metricBatches">-</strong></article>
+          </div>
+
+          <ul id="previewWarnings" class="warning-box" style="display: none"></ul>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h3>Expected Daily Stats (cp × 날짜)</h3>
+              <button id="copyDaily" class="secondary small">표 복사</button>
+            </div>
+            <div class="table-wrap">
+              <table id="dailyExpectedTable">
+                <thead>
+                  <tr><th>cp</th><th>date</th><th>count</th><th>min</th><th>max</th><th>avg</th><th>max_time</th></tr>
+                </thead>
+                <tbody id="dailyExpected"><tr><td colspan="7" class="hint">Preview를 실행하면 기대값이 표시됩니다.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+
+          <div class="grid two">
+            <article class="panel">
+              <div class="panel-header">
+                <h3>Hourly Expected</h3>
+                <select id="hourlyDaySelect" style="width: 260px"></select>
+              </div>
+              <p class="hint">daily col = 종료 라벨(H+1) / hourly = 시작 라벨(H). 두 테이블의 라벨은 반대입니다.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>CH hour</th><th>daily col</th><th>hourly</th><th>count</th><th>min</th><th>max</th><th>avg</th><th>max_time</th></tr>
+                  </thead>
+                  <tbody id="hourlyPreview"><tr><td colspan="8" class="hint">Preview를 실행하세요.</td></tr></tbody>
+                </table>
+              </div>
+            </article>
+            <article class="panel">
+              <h3>Sample Raw Rows</h3>
+              <pre id="sampleRows" class="codebox">Preview를 실행하세요.</pre>
+            </article>
+          </div>
+        </section>
+
+        <!-- 5. Generate -->
+        <section id="generate" class="section">
+          <article class="panel danger-zone">
+            <h3>실행 전 확인</h3>
+            <pre id="genSummary" class="codebox" style="min-height: 140px">Preview를 먼저 실행하세요.</pre>
+            <label class="toggle">
+              <input id="genConfirm" type="checkbox" />
+              <span>위 대상 DB, 날짜 범위, row 수를 확인했습니다. 이 데이터는 테스트 DB에 주입됩니다.</span>
+            </label>
+            <div class="top-actions" style="margin-top: 10px">
+              <button id="runDry" class="secondary">Dry-run (DB 미접근)</button>
+              <button id="runInsert" class="danger" disabled>실제 INSERT 실행</button>
+              <button id="cancelRun" class="secondary" disabled>취소</button>
+            </div>
+            <p class="hint">INSERT는 TestOnly 프로파일에서만 가능하며, 직후 readback(건수 대조 + 중복 카나리)이 자동 수행됩니다. 취소는 batch 경계에서 반영됩니다.</p>
+          </article>
+
+          <article class="panel">
+            <h3>진행 상황</h3>
+            <div class="progress-track"><div id="progressBar" class="progress-fill"></div></div>
+            <pre id="genLog" class="codebox" style="min-height: 160px"></pre>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h3>실행 이력</h3>
+              <button id="loadHistory" class="secondary small">불러오기</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>run_id</th><th>profile</th><th>dry</th><th>rows</th><th>일자별 결과</th><th></th></tr>
+                </thead>
+                <tbody id="historyRows"><tr><td colspan="6" class="hint">Generate 탭에 들어오면 자동으로 불러옵니다.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 6. Regenerate -->
+        <section id="regen" class="section">
+          <article class="panel">
+            <div class="panel-header">
+              <h3>제품 통계 재생성 유도 체크리스트</h3>
+              <div>
+                <button id="buildChecklist" class="secondary small">생성</button>
+                <button id="copyChecklist" class="secondary small">복사</button>
+              </div>
+            </div>
+            <p class="hint">
+              analyzer는 해당 날짜의 통계 행 + liz_log 마커가 있으면 재생성을 스킵합니다.
+              이 도구는 삭제/재기동을 실행하지 않습니다 — 아래 절차를 작업자가 QA 환경에서 직접 실행하세요.
+            </p>
+            <textarea id="checklistText" spellcheck="false" style="min-height: 420px"></textarea>
+          </article>
+        </section>
+
+        <!-- 7. Verify -->
+        <section id="verify" class="section">
+          <article class="panel">
+            <h3>검증 실행</h3>
+            <p class="hint">
+              L1 = 주입 직후 (expected ↔ checkvalue ↔ MV, 재생성 불필요) /
+              L2 = 재생성 후 (expected ↔ MariaDB daily·hourly).
+              실행 전 복제 지연 가드(60초)가 자동 적용됩니다.
+            </p>
+            <div class="top-actions">
+              <button id="verifyL1" class="secondary">L1만 검증 (재생성 전)</button>
+              <button id="verifyAll" class="primary">L1 + L2 전체 검증</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <h3>결과</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>layer</th><th>실행</th><th>판정</th><th>검사 항목</th><th>불일치</th><th>비고</th></tr>
+                </thead>
+                <tbody id="verifyLayers"><tr><td colspan="6" class="hint">검증을 실행하면 결과가 표시됩니다.</td></tr></tbody>
+              </table>
+            </div>
+            <div id="verifyBanner" class="hint" style="margin-top: 10px"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h3>Mismatch Samples</h3>
+              <button id="copyMismatch" class="secondary small">표 복사</button>
+            </div>
+            <div class="table-wrap">
+              <table id="mismatchTable">
+                <thead>
+                  <tr><th>layer</th><th>cp</th><th>date</th><th>hour</th><th>field</th><th>expected</th><th>actual</th><th>note</th></tr>
+                </thead>
+                <tbody id="mismatchRows"><tr><td colspan="8" class="hint">검증을 실행하면 불일치 표본이 표시됩니다.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 8. E2E -->
+        <section id="e2e" class="section">
+          <div id="e2eResume" class="resume-banner" style="display: none"></div>
+
+          <article class="panel danger-zone">
+            <h3>온종일 E2E 자동 실행</h3>
+            <p class="hint">
+              주입(INSERT+readback) → L1 게이트 → 시간대별 생성 시점((H+1):05+여유)에 맞춰
+              자동 verify 반복 → 최종 리포트를 한 번에 수행합니다. 오늘 날짜 시나리오 전용이며,
+              진행 상태는 매 판정마다 저장되어 앱을 껐다 켜도 이어서 할 수 있고, 리포트는
+              완료·중단 시 자동 저장됩니다. 실행 중에는 시스템 절전이 자동으로 방지됩니다.
+            </p>
+            <label class="toggle">
+              <input id="e2eSkipGen" type="checkbox" />
+              <span>주입 생략 — 이미 주입된 시나리오를 이어서 검증만 (seed·시나리오가 같아야 함)</span>
+            </label>
+            <label class="toggle">
+              <input id="e2eSkipDaily" type="checkbox" />
+              <span>일별 셀 제외 — 자정 전에 끝내고 싶을 때 (23시 hourly 셀은 유지됨)</span>
+            </label>
+            <label class="toggle">
+              <input id="e2eKeepGoing" type="checkbox" />
+              <span>불합격에도 계속 — L1/readback 실패 시에도 시간대별 판정을 계속 진행 (진단용, 결과를 합격 근거로 쓰지 말 것)</span>
+            </label>
+            <details class="advanced">
+              <summary>고급 설정</summary>
+              <div class="field-row">
+                <label>불일치 재확인 간격(분) <input id="e2eRetryMin" type="number" min="1" value="10" /></label>
+                <label>셀당 판정 시도 상한 <input id="e2eMaxAttempts" type="number" min="1" value="3" /></label>
+              </div>
+            </details>
+            <label class="toggle">
+              <input id="e2eConfirm" type="checkbox" />
+              <span>대상 DB·날짜·row 수를 확인했습니다. 이 실행은 테스트 DB에 실제 INSERT를 포함합니다.</span>
+            </label>
+            <div class="top-actions" style="margin-top: 10px">
+              <button id="e2eStart" class="danger" disabled>E2E 시작</button>
+              <button id="e2eCancel" class="secondary" disabled>중단 (부분 결과 유지)</button>
+              <button id="e2eSaveMd" class="secondary" disabled>리포트 MD 저장</button>
+            </div>
+          </article>
+
+          <article class="panel" id="e2ePreflightPanel" style="display: none">
+            <h3>사전 점검</h3>
+            <div id="e2ePreflight" class="preflight"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h3>진행 상황</h3>
+              <span id="e2eStatus" class="badge">대기</span>
+            </div>
+            <div class="progress-track"><div id="e2eProgressBar" class="progress-fill"></div></div>
+            <pre id="e2eLog" class="codebox" style="min-height: 140px"></pre>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h3>셀 판정 (cp × 날짜 × 시간, "일별"=daily_stats)</h3>
+              <div>
+                <button id="e2eProblemOnly" class="secondary small">문제만 보기</button>
+                <button id="copyCells" class="secondary small">표 복사</button>
+              </div>
+            </div>
+            <div id="e2eChips" class="chip-row"></div>
+            <div class="table-wrap">
+              <table id="e2eCellsTable">
+                <thead>
+                  <tr><th>cp</th><th>date</th><th>hour</th><th>판정 시점</th><th>상태</th><th>시도</th><th>비고</th></tr>
+                </thead>
+                <tbody id="e2eCells"><tr><td colspan="7" class="hint">E2E를 시작하면 시간대별 판정 계획이 표시됩니다.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 9. Report -->
+        <section id="report" class="section">
+          <article class="panel">
+            <div class="panel-header">
+              <h3>Report</h3>
+              <div>
+                <button id="buildReport" class="secondary small">생성</button>
+                <button id="copyReport" class="secondary small">복사</button>
+                <button id="saveMd" class="secondary small">MD 저장</button>
+                <button id="saveJson" class="secondary small">JSON 저장</button>
+                <button id="saveCsv" class="secondary small">CSV 저장</button>
+              </div>
+            </div>
+            <p class="hint">이 탭에 들어오면 최신 결과로 자동 생성됩니다. 앱을 껐다 켠 뒤에도 최근 주입 이력이 반영되며, E2E 리포트는 별도로 자동 저장됩니다(%APPDATA%\rawgen\reports).</p>
+            <textarea id="reportText" spellcheck="false">Preview/Generate/Verify 후 생성하세요.</textarea>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

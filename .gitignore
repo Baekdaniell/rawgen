@@ -1,0 +1,27 @@
+# Go 빌드 캐시 (로컬 전용, 수백 MB)
+.gocache/
+
+# 빌드 산출물 — exe 배포는 GitHub Release로 한다
+/build/bin/
+*.exe
+*.exe~
+# 두 세션 동시 빌드 충돌 방지용 격리 디렉터리
+.next-verify/
+
+# 프런트 의존성 (npm install로 복원)
+frontend/node_modules/
+frontend/package.json.md5
+
+# 로컬 설정·실행 이력 — 실제 저장 위치는 %APPDATA%\rawgen 이지만
+# 실수로 작업 폴더에 생기더라도 절대 커밋되지 않게 막는다 (DB 비밀번호 포함)
+profiles.json
+history.jsonl
+e2e-state.json
+reports/
+*.log
+
+# OS/편집기
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
