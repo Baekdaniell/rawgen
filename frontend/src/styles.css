@@ -81,6 +81,12 @@ textarea {
   font-size: 13px;
 }
 
+/* 한글은 기본값(break-word 유사)으로 두면 "생성기"가 "생성/기"처럼 낱글자로 잘린다.
+   어절 단위로 접히게 한다. */
+.brand p {
+  word-break: keep-all;
+}
+
 .sidebar .brand p,
 .sidebar .hint {
   color: #b7c4cf;
@@ -123,7 +129,22 @@ button {
   margin-top: 12px;
   display: flex;
   gap: 8px;
-  align-items: center;
+  /* 설명이 두 줄 이상으로 접힐 때 체크박스가 세로 가운데로 내려가 첫 줄과 어긋나므로
+     첫 줄 기준으로 맞춘다. */
+  align-items: flex-start;
+}
+
+.toggle input[type="checkbox"] {
+  /* 아래 공통 규칙의 input{width:100%}가 체크박스에도 걸린다. flex-basis:auto가 그 100%를
+     그대로 쓰기 때문에 width를 되돌리지 않으면 체크박스가 줄 전체를 차지하고
+     설명 텍스트가 오른쪽 끝에서 한 글자씩 접힌다. */
+  width: auto;
+  flex: 0 0 auto;
+  margin-top: 3px; /* 첫 줄 텍스트의 광학적 중심에 맞춤 */
+}
+
+.toggle span {
+  line-height: 1.45;
 }
 
 .workspace {

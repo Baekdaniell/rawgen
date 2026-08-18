@@ -40,6 +40,12 @@ func HourlyDueAt(date string, hour int, loc *time.Location) time.Time {
 	return day.Add(time.Duration(hour+1)*time.Hour + 5*time.Minute + hourlyGenMargin)
 }
 
+// HourlyInWindow는 (date, hour) 행이 지금 보존 창 안이라 대조가 유의미한지 알려준다.
+// E2E 러너가 "대조 자체가 불가능한 셀"을 통과로 오판하지 않도록 쓰는 공개 창구다.
+func HourlyInWindow(date string, hour int, now time.Time, loc *time.Location) bool {
+	return hourlyInWindow(date, hour, now, loc)
+}
+
 // hourlyInWindow는 제품의 hourly 보존 창 기준으로 (date, hour) 행이
 // "지금 존재해야 정상"인지 판정한다.
 //   - H시 행은 (H+1):05 + 여유 이후에야 존재한다 (매시 :05 생성)

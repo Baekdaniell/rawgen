@@ -169,7 +169,7 @@ func TestApplyVerifyRetryThenPassAndFail(t *testing.T) {
 			{Layer: "L2-hourly", CP: 100, Date: "2026-08-14", Hour: 4, Field: "row", Actual: "행 없음"},
 		}},
 	}
-	applyVerify(res, vres, now, opt)
+	applyVerify(res, vres, now, loc, opt)
 
 	if c := res.Cells[0]; c.Status != StatusPass {
 		t.Errorf("hour 3 = %s, want pass", c.Status)
@@ -183,12 +183,41 @@ func TestApplyVerifyRetryThenPassAndFail(t *testing.T) {
 
 	// 재확인 2회 더 불일치 → fail 확정
 	later := now.Add(11 * time.Minute)
-	applyVerify(res, vres, later, opt)
-	applyVerify(res, vres, later.Add(11*time.Minute), opt)
+	applyVerify(res, vres, later, loc, opt)
+	applyVerify(res, vres, later.Add(11*time.Minute), loc, opt)
 	if c := res.Cells[1]; c.Status != StatusFail || c.Attempts != 3 {
 		t.Errorf("hour 4 = %s attempts %d, want fail/3", c.Status, c.Attempts)
 	}
 }
+
+// 판정 시각을 놓친 셀(재개가 늦어 보존 창 밖): 불일치가 0으로 와도 통과가 아니라 skip.
+// verify가 창 밖 시간대를 대조에서 제외하므로, 통과로 처리하면 미검증이 PASS로 둔갑한다.
+func TestApplyVerifyMissedWindowIsSkipNotPass(t *testing.T) {
+	loc := mustLoc(t)
+	// 08-14 17시 셀을 다음날 09:00에 판정 → 창 밖(당일+전일 23시만 잔존)
+	now := time.Date(2026, 8, 15, 9, 0, 0, 0, loc)
+	c := &Cell{CP: 100, Date: "2026-08-14", Hour: 17, Status: StatusWait}
+	c.setDue(time.Date(2026, 8, 14, 18, 15, 0, 0, loc))
+	res := &Result{Cells: []*Cell{c}}
+
+	vres := &verify.Result{L2Hourly: verify.LayerResult{Ran: true}} // 불일치 0
+	applyVerify(res, vres, now, loc, opt3())
+
+	if c.Status != StatusSkip {
+		t.Errorf("놓친 셀 status = %s, want skip (미검증이 pass로 둔갑하면 안 됨)", c.Status)
+	}
+
+	// 반대로 창 안(전일 23시)이면 정상 통과
+	c23 := &Cell{CP: 100, Date: "2026-08-14", Hour: 23, Status: StatusWait}
+	c23.setDue(time.Date(2026, 8, 15, 0, 15, 0, 0, loc))
+	res2 := &Result{Cells: []*Cell{c23}}
+	applyVerify(res2, vres, now, loc, opt3())
+	if c23.Status != StatusPass {
+		t.Errorf("전일 23시 status = %s, want pass", c23.Status)
+	}
+}
+
+func opt3() Options { return Options{RetryDelay: 10 * time.Minute, MaxAttempts: 3} }
 
 func TestApplyVerifyWindowViolationAndDaily(t *testing.T) {
 	loc := mustLoc(t)
@@ -208,9 +237,9 @@ func TestApplyVerifyWindowViolationAndDaily(t *testing.T) {
 				Note: "창 밖 잔존 행 — 00:05 truncate 미동작 또는 시계 이상 의심"},
 		}},
 	}
-	applyVerify(res, vres, now, opt)
-	applyVerify(res, vres, now.Add(11*time.Minute), opt)
-	applyVerify(res, vres, now.Add(22*time.Minute), opt)
+	applyVerify(res, vres, now, loc, opt)
+	applyVerify(res, vres, now.Add(11*time.Minute), loc, opt)
+	applyVerify(res, vres, now.Add(22*time.Minute), loc, opt)
 
 	if daily.Status != StatusFail {
 		t.Errorf("daily = %s, want fail", daily.Status)

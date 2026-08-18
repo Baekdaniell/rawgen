@@ -13,20 +13,20 @@
           <div class="mark">RG</div>
           <div>
             <h1>rawgen</h1>
-            <p>MK119 통계 검증용 raw data 생성기 (OQT-325)</p>
+            <p>MK119 통계 검증용 raw data 생성기</p>
           </div>
         </div>
 
         <nav class="steps" aria-label="sections">
-          <button class="step active" data-section="connections">1. Connections</button>
-          <button class="step" data-section="targets">2. Targets</button>
-          <button class="step" data-section="scenario">3. Scenario</button>
-          <button class="step" data-section="preview">4. Preview</button>
-          <button class="step" data-section="generate">5. Generate</button>
-          <button class="step" data-section="regen">6. Regenerate</button>
-          <button class="step" data-section="verify">7. Verify</button>
-          <button class="step" data-section="e2e">8. E2E 자동</button>
-          <button class="step" data-section="report">9. Report</button>
+          <button class="step active" data-section="connections">1. 연결</button>
+          <button class="step" data-section="targets">2. 대상 선택</button>
+          <button class="step" data-section="scenario">3. 시나리오</button>
+          <button class="step" data-section="preview">4. 미리보기</button>
+          <button class="step" data-section="generate">5. 주입</button>
+          <button class="step" data-section="regen">6. 제품 재생성</button>
+          <button class="step" data-section="verify">7. 검증</button>
+          <button class="step" data-section="e2e">8. 온종일 자동 검증</button>
+          <button class="step" data-section="report">9. 리포트</button>
         </nav>
 
         <section class="side-panel">
@@ -40,7 +40,7 @@
       <section class="workspace">
         <header class="topbar">
           <div>
-            <h2 id="sectionTitle">Connections</h2>
+            <h2 id="sectionTitle">연결</h2>
             <p id="sectionSubtitle">DB 연결 프로파일을 만들고 테스트합니다.</p>
           </div>
         </header>
@@ -50,7 +50,7 @@
           <button id="errorClose" class="error-close">닫기</button>
         </div>
 
-        <!-- 1. Connections -->
+        <!-- 1. 연결 (Connections) -->
         <section id="connections" class="section active">
           <div class="grid two">
             <article class="panel">
@@ -120,7 +120,7 @@
           </article>
         </section>
 
-        <!-- 2. Targets -->
+        <!-- 2. 대상 선택 (Targets) -->
         <section id="targets" class="section">
           <article class="panel">
             <div class="panel-header">
@@ -153,7 +153,7 @@
           </article>
         </section>
 
-        <!-- 3. Scenario -->
+        <!-- 3. 시나리오 (Scenario) -->
         <section id="scenario" class="section">
           <div class="grid two">
             <article class="panel">
@@ -226,7 +226,7 @@
           </article>
         </section>
 
-        <!-- 4. Preview -->
+        <!-- 4. 미리보기 (Preview) -->
         <section id="preview" class="section">
           <div class="top-actions" style="margin-bottom: 16px">
             <button id="runPreview" class="primary">Preview 실행 (dry-run, DB 미접근)</button>
@@ -278,7 +278,7 @@
           </div>
         </section>
 
-        <!-- 5. Generate -->
+        <!-- 5. 주입 (Generate) -->
         <section id="generate" class="section">
           <article class="panel danger-zone">
             <h3>실행 전 확인</h3>
@@ -311,13 +311,13 @@
                 <thead>
                   <tr><th>run_id</th><th>profile</th><th>dry</th><th>rows</th><th>일자별 결과</th><th></th></tr>
                 </thead>
-                <tbody id="historyRows"><tr><td colspan="6" class="hint">Generate 탭에 들어오면 자동으로 불러옵니다.</td></tr></tbody>
+                <tbody id="historyRows"><tr><td colspan="6" class="hint">주입 탭에 들어오면 자동으로 불러옵니다.</td></tr></tbody>
               </table>
             </div>
           </article>
         </section>
 
-        <!-- 6. Regenerate -->
+        <!-- 6. 제품 재생성 (Regenerate) -->
         <section id="regen" class="section">
           <article class="panel">
             <div class="panel-header">
@@ -335,7 +335,7 @@
           </article>
         </section>
 
-        <!-- 7. Verify -->
+        <!-- 7. 검증 (Verify) -->
         <section id="verify" class="section">
           <article class="panel">
             <h3>검증 실행</h3>
@@ -379,7 +379,7 @@
           </article>
         </section>
 
-        <!-- 8. E2E -->
+        <!-- 8. 온종일 자동 검증 (E2E) -->
         <section id="e2e" class="section">
           <div id="e2eResume" class="resume-banner" style="display: none"></div>
 
@@ -455,11 +455,11 @@
           </article>
         </section>
 
-        <!-- 9. Report -->
+        <!-- 9. 리포트 (Report) -->
         <section id="report" class="section">
           <article class="panel">
             <div class="panel-header">
-              <h3>Report</h3>
+              <h3>리포트</h3>
               <div>
                 <button id="buildReport" class="secondary small">생성</button>
                 <button id="copyReport" class="secondary small">복사</button>

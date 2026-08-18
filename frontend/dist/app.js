@@ -36,15 +36,15 @@ const e2eState = {
 };
 
 const sectionMeta = {
-  connections: ["Connections", "DB 연결 프로파일을 만들고 테스트합니다."],
-  targets: ["Targets", "데이터를 주입할 checkpoint를 고릅니다."],
-  scenario: ["Scenario", "날짜, 주기, 목표 통계값을 입력합니다."],
-  preview: ["Preview", "생성될 데이터와 기대 통계를 확인합니다 (DB 미접근)."],
-  generate: ["Generate", "ClickHouse에 batch INSERT + readback을 실행합니다."],
-  regen: ["Regenerate", "제품 통계 재생성 유도 절차를 안내합니다."],
-  verify: ["Verify", "L1(주입 직후) / L2(재생성 후) 검증을 실행합니다."],
-  e2e: ["E2E 자동", "주입→L1→시간대별 자동 verify→리포트를 한 번에 수행합니다."],
-  report: ["Report", "결과를 Markdown/JSON/CSV로 정리합니다."],
+  connections: ["연결", "DB 연결 프로파일을 만들고 테스트합니다."],
+  targets: ["대상 선택", "데이터를 주입할 checkpoint를 고릅니다."],
+  scenario: ["시나리오", "날짜, 주기, 목표 통계값을 입력합니다."],
+  preview: ["미리보기", "생성될 데이터와 기대 통계를 확인합니다 (DB 미접근)."],
+  generate: ["주입", "ClickHouse에 batch INSERT + readback을 실행합니다."],
+  regen: ["제품 재생성", "제품 통계 재생성 유도 절차를 안내합니다."],
+  verify: ["검증", "L1(주입 직후) / L2(재생성 후) 검증을 실행합니다."],
+  e2e: ["온종일 자동 검증", "주입→L1→시간대별 자동 verify→리포트를 한 번에 수행합니다."],
+  report: ["리포트", "결과를 Markdown/JSON/CSV로 정리합니다."],
 };
 
 function setSection(name) {
@@ -424,7 +424,7 @@ function renderPreview(pv) {
     `날짜: ${s.startDate} .. ${s.endDate} (${s.timezone})`,
     `checkpoint ${s.checkpointIds.length}개: ${s.checkpointIds.join(", ")}`,
     `예상 row: ${pv.totalRows.toLocaleString()} / batch ${Math.ceil(pv.totalRows / bs)}개 (size ${bs.toLocaleString()})`,
-    `경고 ${pv.warnings?.length || 0}건${pv.warnings?.length ? " — Preview 탭에서 확인" : ""}`,
+    `경고 ${pv.warnings?.length || 0}건${pv.warnings?.length ? " — 미리보기 탭에서 확인" : ""}`,
     ``,
     `주입 후 이 (날짜 × cp)는 다른 검증의 클린 대조 기준으로 사용 금지.`,
   ].join("\n");
@@ -1064,7 +1064,7 @@ function bindRuntimeEvents() {
     $("e2eStatus").textContent = verdict;
     e2eLog(`E2E 종료: ${verdict} — verify ${res.verifyRuns}회`);
     if (res.finalVerify) renderVerify(res.finalVerify);
-    e2eLog("리포트는 자동 저장되었고(로그의 경로 참조), 최종 verify 결과는 Verify 탭에 반영되었습니다.");
+    e2eLog("리포트는 자동 저장되었고(로그의 경로 참조), 최종 verify 결과는 검증 탭에 반영되었습니다.");
     if (res.aborted) checkPendingE2E().catch(() => {});
     updateStepStates();
   });

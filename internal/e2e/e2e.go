@@ -400,7 +400,7 @@ func Run(ctx context.Context, p profile.Profile, s model.Scenario, opt Options, 
 		}
 		errStreak = 0
 		res.FinalVerify = vres
-		applyVerify(res, vres, time.Now(), opt)
+		applyVerify(res, vres, time.Now(), loc, opt)
 		saveState()
 		emitCells(emit, res.Cells)
 	}
@@ -457,7 +457,9 @@ func nextDue(cells []*Cell) (time.Time, bool) {
 }
 
 // applyVerify는 판정 시점이 도래한 셀에 이번 verify 결과를 반영한다.
-func applyVerify(res *Result, vres *verify.Result, now time.Time, opt Options) {
+// loc는 보존 창 판정용 — 판정 시점에 창을 벗어난 셀은 "불일치 0"이 나와도 대조가
+// 아예 수행되지 않은 것이므로 통과로 처리하면 안 된다(재개가 늦어 놓친 셀).
+func applyVerify(res *Result, vres *verify.Result, now time.Time, loc *time.Location, opt Options) {
 	hourly := map[string][]verify.Mismatch{}
 	daily := map[string][]verify.Mismatch{}
 	for _, m := range vres.L2Hourly.Mismatches {
@@ -486,6 +488,14 @@ func applyVerify(res *Result, vres *verify.Result, now time.Time, opt Options) {
 		} else {
 			ms = hourly[fmt.Sprintf("%d|%s|%d", c.CP, c.Date, c.Hour)]
 			if !vres.L2Hourly.Ran {
+				continue
+			}
+			// 판정 시점에 보존 창을 벗어났으면 verify가 이 시간대를 대조에서 제외한다.
+			// 그 상태의 "불일치 0"은 통과가 아니라 미검증이므로 skip으로 확정한다.
+			if loc != nil && !verify.HourlyInWindow(c.Date, c.Hour, now, loc) {
+				c.Status = StatusSkip
+				c.CheckedAt = now.Format("01-02 15:04")
+				c.Note = "판정 시점에 보존 창(당일+전일 23시)을 벗어나 대조 불가 — 판정 시각을 놓친 셀(미검증)"
 				continue
 			}
 		}
