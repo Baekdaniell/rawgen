@@ -592,3 +592,37 @@ details.advanced summary {
   color: var(--muted);
   margin-bottom: 6px;
 }
+
+/* 고급 설정 접이식 — 테이블명 오버라이드 */
+.advanced {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #f7f9fb;
+}
+
+.advanced summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: #314252;
+}
+
+.advanced .hint {
+  margin: 8px 0;
+}
+
+/* 판정된 셀이 없는데 진행률만 차오르는 것을 막기 위한 경고색 */
+.bar-warn {
+  background: #d9a441;
+}
+
+/* NaN이 섞인 시간대 — 경로별 기대가 갈리는 행 */
+.row-nan {
+  background: #fdf7e8;
+}
+
+.nan-mark {
+  color: var(--accent);
+  font-weight: 700;
+}

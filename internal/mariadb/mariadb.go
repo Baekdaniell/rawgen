@@ -51,6 +51,14 @@ func Open(p profile.Profile) (*Client, error) {
 
 func (c *Client) Close() error { return c.db.Close() }
 
+// loc는 프로파일 타임존이다. DATETIME 형식 max_time을 epoch으로 옮길 때 쓴다.
+func (c *Client) loc() *time.Location {
+	if l, err := time.LoadLocation(c.p.Timezone); err == nil {
+		return l
+	}
+	return time.Local
+}
+
 func (c *Client) Ping(ctx context.Context) error { return c.db.PingContext(ctx) }
 
 func (c *Client) columns(ctx context.Context, table string) ([]string, error) {
@@ -176,13 +184,44 @@ type DailyRow struct {
 	CheckpointID int64
 	Date         string
 	Min, Max, Avg  *float64 // 일별 대푯값
-	MaxTimeMs      *int64   // epoch ms
+	MaxTimeMs      *int64   // epoch ms (해석 실패 시 nil, 원문은 MaxTimeRaw)
+	MaxTimeRaw     string   // 해석하지 못한 max_time 원문(진단용)
 	HourMin        map[int]*float64
 	HourMax        map[int]*float64
 	HourAvg        map[int]*float64
 }
 
 var hourColRe = regexp.MustCompile(`^(min|max|avg)_value_(\d{2})$`)
+
+// max_time 컬럼 타입은 배포본마다 다르다(epoch ms BIGINT / DATETIME / TIMESTAMP).
+// epoch만 파싱하고 실패를 nil로 남기면 대조가 조용히 사라지므로, 형식을 순서대로 시도하고
+// 실패 시 원문을 돌려준다(원문은 리포트에 실측값으로 표시된다).
+var maxTimeLayouts = []string{
+	"2006-01-02 15:04:05.999999",
+	"2006-01-02T15:04:05.999999",
+	"2006-01-02 15:04:05",
+	"2006-01-02T15:04:05Z07:00",
+}
+
+func parseMaxTime(text string, loc *time.Location) *int64 {
+	s := strings.TrimSpace(text)
+	if s == "" || strings.EqualFold(s, "null") {
+		return nil
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return &n
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	for _, layout := range maxTimeLayouts {
+		if t, err := time.ParseInLocation(layout, s, loc); err == nil {
+			ms := t.UnixMilli()
+			return &ms
+		}
+	}
+	return nil
+}
 
 // DailyStats는 (cp, 날짜)의 daily_stats 행을 읽는다. 없으면 nil.
 func (c *Client) DailyStats(ctx context.Context, cp int64, date string) (*DailyRow, error) {
@@ -259,8 +298,9 @@ func (c *Client) DailyStats(ctx context.Context, cp int64, date string) (*DailyR
 				dr.Avg = &f
 			}
 		case "max_time":
-			if n, err := strconv.ParseInt(text, 10, 64); err == nil {
-				dr.MaxTimeMs = &n
+			dr.MaxTimeMs = parseMaxTime(text, c.loc())
+			if dr.MaxTimeMs == nil {
+				dr.MaxTimeRaw = text
 			}
 		}
 	}
@@ -271,7 +311,8 @@ func (c *Client) DailyStats(ctx context.Context, cp int64, date string) (*DailyR
 type HourlyRow struct {
 	Hour      int
 	Min, Max, Avg *float64
-	MaxTimeMs *int64
+	MaxTimeMs *int64 // epoch ms (해석 실패 시 nil, 원문은 MaxTimeRaw)
+	MaxTimeRaw string
 }
 
 func (c *Client) HourlyStats(ctx context.Context, cp int64, date string) ([]HourlyRow, error) {
@@ -293,13 +334,16 @@ func (c *Client) HourlyStats(ctx context.Context, cp int64, date string) ([]Hour
 	if dateCol == "" || cpCol == "" || hourCol == "" {
 		return nil, fmt.Errorf("%s에서 필수 컬럼을 찾지 못했습니다. 실제 컬럼: %s", table, strings.Join(cols, ", "))
 	}
-	sel := []string{hourCol}
-	for _, col := range []string{minCol, maxCol, avgCol, mtCol} {
-		if col != "" {
-			sel = append(sel, col)
-		} else {
-			sel = append(sel, "NULL")
-		}
+	// 값 컬럼을 못 찾았는데 리터럴 NULL로 SELECT하면 스키마 불일치가 "값 비교 0건 + 전 셀 통과"로
+	// 둔갑한다. 대조 대상 자체가 없는 것이므로 조회 실패로 알린다.
+	if minCol == "" || maxCol == "" || avgCol == "" {
+		return nil, fmt.Errorf("%s에서 값 컬럼(min/max/avg)을 찾지 못해 대조할 수 없습니다. 실제 컬럼: %s", table, strings.Join(cols, ", "))
+	}
+	sel := []string{hourCol, minCol, maxCol, avgCol}
+	if mtCol != "" {
+		sel = append(sel, mtCol)
+	} else {
+		sel = append(sel, "NULL")
 	}
 	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = ? AND %s = ? ORDER BY %s",
 		strings.Join(sel, ", "), table, cpCol, dateCol, hourCol)
@@ -312,7 +356,9 @@ func (c *Client) HourlyStats(ctx context.Context, cp int64, date string) ([]Hour
 	for rows.Next() {
 		var hourText sql.NullString
 		var mn, mx, av sql.NullFloat64
-		var mt sql.NullInt64
+		// max_time은 배포본에 따라 BIGINT epoch일 수도 DATETIME일 수도 있다.
+		// NullInt64로 받으면 DATETIME 배포본에서 Scan 자체가 에러가 되므로 문자열로 받는다.
+		var mt sql.NullString
 		if err := rows.Scan(&hourText, &mn, &mx, &av, &mt); err != nil {
 			return nil, err
 		}
@@ -331,7 +377,10 @@ func (c *Client) HourlyStats(ctx context.Context, cp int64, date string) ([]Hour
 			hr.Avg = &av.Float64
 		}
 		if mt.Valid {
-			hr.MaxTimeMs = &mt.Int64
+			hr.MaxTimeMs = parseMaxTime(mt.String, c.loc())
+			if hr.MaxTimeMs == nil {
+				hr.MaxTimeRaw = mt.String
+			}
 		}
 		out = append(out, hr)
 	}

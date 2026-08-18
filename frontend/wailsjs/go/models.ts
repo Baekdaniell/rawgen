@@ -218,7 +218,10 @@ export namespace main {
 	    startedAt?: string;
 	    aborted?: string;
 	    doneCells: number;
+	    noCells: boolean;
 	    totalCells: number;
+	    profile?: string;
+	    target?: string;
 	    scenarioJson?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -231,7 +234,10 @@ export namespace main {
 	        this.startedAt = source["startedAt"];
 	        this.aborted = source["aborted"];
 	        this.doneCells = source["doneCells"];
+	        this.noCells = source["noCells"];
 	        this.totalCells = source["totalCells"];
+	        this.profile = source["profile"];
+	        this.target = source["target"];
 	        this.scenarioJson = source["scenarioJson"];
 	    }
 	}
@@ -381,6 +387,7 @@ export namespace model {
 	    dailyCol: string;
 	    hourlyCol: string;
 	    stats: Stats;
+	    statsAll: Stats;
 	
 	    static createFrom(source: any = {}) {
 	        return new HourExpected(source);
@@ -393,6 +400,7 @@ export namespace model {
 	        this.dailyCol = source["dailyCol"];
 	        this.hourlyCol = source["hourlyCol"];
 	        this.stats = this.convertValues(source["stats"], Stats);
+	        this.statsAll = this.convertValues(source["statsAll"], Stats);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -420,6 +428,7 @@ export namespace model {
 	    avg: number;
 	    sum: number;
 	    maxTime?: string;
+	    nanCount?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Stats(source);
@@ -433,12 +442,14 @@ export namespace model {
 	        this.avg = source["avg"];
 	        this.sum = source["sum"];
 	        this.maxTime = source["maxTime"];
+	        this.nanCount = source["nanCount"];
 	    }
 	}
 	export class DayExpected {
 	    checkpointId: number;
 	    date: string;
 	    stats: Stats;
+	    statsAll: Stats;
 	    hours: HourExpected[];
 	    rowCount: number;
 	
@@ -451,6 +462,7 @@ export namespace model {
 	        this.checkpointId = source["checkpointId"];
 	        this.date = source["date"];
 	        this.stats = this.convertValues(source["stats"], Stats);
+	        this.statsAll = this.convertValues(source["statsAll"], Stats);
 	        this.hours = this.convertValues(source["hours"], HourExpected);
 	        this.rowCount = source["rowCount"];
 	    }
@@ -494,6 +506,7 @@ export namespace model {
 	    hour: number;
 	    mode: string;
 	    goal: Goal;
+	    nanCount?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new HourOverride(source);
@@ -504,6 +517,7 @@ export namespace model {
 	        this.hour = source["hour"];
 	        this.mode = source["mode"];
 	        this.goal = this.convertValues(source["goal"], Goal);
+	        this.nanCount = source["nanCount"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -766,6 +780,8 @@ export namespace verify {
 	    name: string;
 	    ran: boolean;
 	    pass: boolean;
+	    errored?: boolean;
+	    err?: string;
 	    checked: number;
 	    mismatches: Mismatch[];
 	    note?: string;
@@ -779,6 +795,8 @@ export namespace verify {
 	        this.name = source["name"];
 	        this.ran = source["ran"];
 	        this.pass = source["pass"];
+	        this.errored = source["errored"];
+	        this.err = source["err"];
 	        this.checked = source["checked"];
 	        this.mismatches = this.convertValues(source["mismatches"], Mismatch);
 	        this.note = source["note"];
@@ -803,6 +821,36 @@ export namespace verify {
 		}
 	}
 	
+	export class PathDiff {
+	    cp: number;
+	    date: string;
+	    hour: number;
+	    field: string;
+	    nanRows: number;
+	    finite: string;
+	    all: string;
+	    actual: string;
+	    matched: string;
+	    layer: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PathDiff(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cp = source["cp"];
+	        this.date = source["date"];
+	        this.hour = source["hour"];
+	        this.field = source["field"];
+	        this.nanRows = source["nanRows"];
+	        this.finite = source["finite"];
+	        this.all = source["all"];
+	        this.actual = source["actual"];
+	        this.matched = source["matched"];
+	        this.layer = source["layer"];
+	    }
+	}
 	export class Result {
 	    replicationDelay: number;
 	    guardPassed: boolean;
@@ -812,6 +860,7 @@ export namespace verify {
 	    l2Daily: LayerResult;
 	    l2Hourly: LayerResult;
 	    warnings: string[];
+	    pathDiffs?: PathDiff[];
 	    pass: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -828,6 +877,7 @@ export namespace verify {
 	        this.l2Daily = this.convertValues(source["l2Daily"], LayerResult);
 	        this.l2Hourly = this.convertValues(source["l2Hourly"], LayerResult);
 	        this.warnings = source["warnings"];
+	        this.pathDiffs = this.convertValues(source["pathDiffs"], PathDiff);
 	        this.pass = source["pass"];
 	    }
 	

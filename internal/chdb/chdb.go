@@ -279,14 +279,28 @@ type HourAgg struct {
 // RawHourly는 checkvalue 원본을 시간대별로 재집계한다(L1 원천).
 // max_time은 제품 동률 규칙과 동일: argMax(log_date, (raw_data, bitNot(toUInt64(log_date)))).
 func (c *Client) RawHourly(ctx context.Context, cp int64, from, to time.Time) ([]HourAgg, error) {
+	return c.rawHourly(ctx, cp, from, to, false)
+}
+
+// RawHourlyFinite는 제품의 checkvalue 폴백 경로와 같은 조건(isFinite)으로 재집계한다.
+// NaN을 섞은 시나리오에서 "폴백 경로가 만들어야 할 값"의 원천이 된다.
+func (c *Client) RawHourlyFinite(ctx context.Context, cp int64, from, to time.Time) ([]HourAgg, error) {
+	return c.rawHourly(ctx, cp, from, to, true)
+}
+
+func (c *Client) rawHourly(ctx context.Context, cp int64, from, to time.Time, finiteOnly bool) ([]HourAgg, error) {
 	cv, _ := ident(c.p.CheckvalueTable)
+	filter := ""
+	if finiteOnly {
+		filter = " AND isFinite(raw_data)"
+	}
 	rows, err := c.conn.Query(ctx, fmt.Sprintf(`
 SELECT toHour(log_date) AS h, count() AS cnt,
        min(raw_data) AS mn, max(raw_data) AS mx, avg(raw_data) AS av,
        argMax(log_date, tuple(raw_data, bitNot(toUInt64(log_date)))) AS mt
 FROM %s.%s
-WHERE checkpoint_id = ? AND log_date >= ? AND log_date < ?
-GROUP BY h ORDER BY h`, c.db, cv), cp, from, to)
+WHERE checkpoint_id = ? AND log_date >= ? AND log_date < ?%s
+GROUP BY h ORDER BY h`, c.db, cv, filter), cp, from, to)
 	if err != nil {
 		return nil, err
 	}

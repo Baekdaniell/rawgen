@@ -117,8 +117,32 @@ func (a *App) ListProfiles() ([]profile.Profile, error) {
 	return a.store.List()
 }
 
+// SaveProfile은 프로파일을 저장한다. 테이블명 오버라이드는 UI 폼에 없을 수 있어
+// 빈 값으로 오면 기존 값을 유지한다 — 그냥 덮으면 배포본 테이블명 설정이 조용히
+// 표준명으로 되돌아가고, 그 결과 hourly 조회가 실패한다.
 func (a *App) SaveProfile(p profile.Profile) (profile.Profile, error) {
+	if p.ID != "" {
+		if old, err := a.store.Get(p.ID); err == nil {
+			mergeTableOverrides(&p, old)
+		}
+	}
 	return a.store.Upsert(p)
+}
+
+func mergeTableOverrides(p *profile.Profile, old profile.Profile) {
+	pairs := []struct{ dst *string; src string }{
+		{&p.CheckvalueTable, old.CheckvalueTable},
+		{&p.DailyStatsCHTable, old.DailyStatsCHTable},
+		{&p.DailyStatsTable, old.DailyStatsTable},
+		{&p.HourlyTable, old.HourlyTable},
+		{&p.CheckpointTable, old.CheckpointTable},
+		{&p.ExcludeDateTable, old.ExcludeDateTable},
+	}
+	for _, pr := range pairs {
+		if *pr.dst == "" {
+			*pr.dst = pr.src
+		}
+	}
 }
 
 func (a *App) DeleteProfile(id string) error {
@@ -260,6 +284,22 @@ func (a *App) LoadScenarioFile() (*ScenarioFile, error) {
 	return out, nil
 }
 
+// guardNaN은 NaN 주입을 두 겹으로 막는다: TestOnly 프로파일 + 전용 확인.
+// NaN은 제품 통계를 경로별로 갈라놓기 때문에, 실수로 섞이면 그 (날짜×cp)는
+// 이후 어떤 검증에도 클린 기준으로 쓸 수 없다.
+func guardNaN(s model.Scenario, p profile.Profile, dryRun, allowNaN bool) error {
+	if !s.HasNaN() || dryRun {
+		return nil
+	}
+	if !p.TestOnly {
+		return fmt.Errorf("NaN 주입은 TestOnly 프로파일에서만 가능합니다")
+	}
+	if !allowNaN {
+		return fmt.Errorf("NaN 주입 확인이 필요합니다 — 시나리오에 NaN 행이 포함되어 있습니다. 주입 화면의 'NaN 주입 확인'을 체크하세요")
+	}
+	return nil
+}
+
 // ---------- Preview ----------
 
 func (a *App) BuildPreview(scenarioJSON string) (*model.Preview, error) {
@@ -281,7 +321,8 @@ func (a *App) BuildPreview(scenarioJSON string) (*model.Preview, error) {
 
 // Generate는 비동기로 실행하고 진행률을 이벤트로 보낸다.
 // 이벤트: gen:progress(executor.Progress), gen:done(RunResult), gen:error(string)
-func (a *App) Generate(profileID, scenarioJSON string, dryRun bool) error {
+// allowNaN은 NaN 주입 전용 확인이다 — 실수로 켜지지 않도록 일반 확인과 분리한다.
+func (a *App) Generate(profileID, scenarioJSON string, dryRun, allowNaN bool) error {
 	p, err := a.store.Get(profileID)
 	if err != nil {
 		return err
@@ -289,6 +330,9 @@ func (a *App) Generate(profileID, scenarioJSON string, dryRun bool) error {
 	var s model.Scenario
 	if err := json.Unmarshal([]byte(scenarioJSON), &s); err != nil {
 		return fmt.Errorf("시나리오 파싱 실패: %w", err)
+	}
+	if err := guardNaN(s, p, dryRun, allowNaN); err != nil {
+		return err
 	}
 
 	if err := a.setBusy("generate"); err != nil {
@@ -390,6 +434,7 @@ func (a *App) RunVerify(profileID, scenarioJSON string, skipL2 bool) (*verify.Re
 
 // E2EOptions는 프런트가 JSON으로 넘기는 실행 옵션이다.
 type E2EOptions struct {
+	AllowNaN     bool `json:"allowNaN"`     // NaN 주입 확인(별도 체크박스)
 	SkipGenerate bool `json:"skipGenerate"` // 이미 주입된 시나리오를 검증만
 	KeepGoing    bool `json:"keepGoing"`    // L1/readback 불합격에도 계속 (진단용)
 	SkipDaily    bool `json:"skipDaily"`    // 일별 셀 제외 (자정 전 종료)
@@ -463,11 +508,16 @@ func autoSaveE2EReport(r *e2e.Result) (string, error) {
 
 // PendingE2E는 재개 가능한 저장 상태 요약을 돌려준다(프런트 시작 시 조회).
 type PendingState struct {
-	Exists       bool   `json:"exists"`
-	StartedAt    string `json:"startedAt,omitempty"`
-	Aborted      string `json:"aborted,omitempty"`
-	DoneCells    int    `json:"doneCells"`
+	Exists    bool   `json:"exists"`
+	StartedAt string `json:"startedAt,omitempty"`
+	Aborted   string `json:"aborted,omitempty"`
+	DoneCells int    `json:"doneCells"`
+	// NoCells는 "셀 계획 이전에 중단된 상태"다. 이 상태로는 재개할 수 없다
+	// (셀 0개로 즉시 완주해 대조 0건 PASS가 나오기 때문).
+	NoCells      bool   `json:"noCells"`
 	TotalCells   int    `json:"totalCells"`
+	Profile      string `json:"profile,omitempty"`
+	Target       string `json:"target,omitempty"`
 	ScenarioJSON string `json:"scenarioJson,omitempty"`
 }
 
@@ -476,7 +526,8 @@ func (a *App) PendingE2E() *PendingState {
 	if st == nil {
 		return &PendingState{}
 	}
-	out := &PendingState{Exists: true, StartedAt: st.StartedAt, Aborted: st.Aborted, TotalCells: len(st.Cells)}
+	out := &PendingState{Exists: true, StartedAt: st.StartedAt, Aborted: st.Aborted,
+		TotalCells: len(st.Cells), NoCells: len(st.Cells) == 0, Profile: st.Profile, Target: st.Target}
 	for _, c := range st.Cells {
 		if c.Status != e2e.StatusWait && c.Status != e2e.StatusRecheck {
 			out.DoneCells++
@@ -561,10 +612,15 @@ func (a *App) E2EPreflight(profileID, scenarioJSON string, skipGenerate, skipDai
 			"시나리오에 오늘 날짜가 없습니다 — hourly는 당일 데이터만 생성되므로 대부분 셀이 '제외(skip)'가 되고, 주입한 (날짜×cp)만 오염됩니다. E2E는 오늘 날짜 시나리오 전용입니다")
 	}
 
+	// 주입 생략이면 실제 주입 시각을 이력에서 찾는다. 시작일 00:00으로 낙관하면
+	// 계획상 skip이 0개로 나와 "전부 skip" 차단이 발동하지 않는다.
 	injectAt := time.Now()
 	if skipGenerate {
-		if d, perr := time.ParseInLocation("2006-01-02", s.StartDate, loc); perr == nil {
-			injectAt = d
+		if t, ok := e2e.ResolveInjectAt(s, loc); ok {
+			injectAt = t
+		} else {
+			res.Warnings = append(res.Warnings,
+				"주입 생략: 이 시나리오의 성공한 주입 이력을 찾지 못했습니다 — 현재 시각 기준으로 계획하므로 이미 생성 시점이 지난 시간대는 제외(skip)됩니다")
 		}
 	}
 	plan, err := e2e.PlanPreview(s, injectAt, skipDaily)
@@ -607,6 +663,9 @@ func (a *App) RunE2E(profileID, scenarioJSON, optionsJSON string) error {
 		if err := json.Unmarshal([]byte(optionsJSON), &o); err != nil {
 			return fmt.Errorf("옵션 파싱 실패: %w", err)
 		}
+	}
+	if err := guardNaN(s, p, o.SkipGenerate || o.Resume, o.AllowNaN); err != nil {
+		return err
 	}
 	opt := e2e.Options{
 		SkipGenerate: o.SkipGenerate || o.Resume,
@@ -657,7 +716,9 @@ func (a *App) RunE2E(profileID, scenarioJSON, optionsJSON string) error {
 				wruntime.EventsEmit(a.ctx, "e2e:progress",
 					e2e.Progress{Phase: "verify", Message: "리포트 자동 저장: " + path})
 			}
-			if err == nil && res.Aborted == "" {
+			// 미검증(INCONCLUSIVE)으로 끝난 실행은 상태를 지우지 않는다 —
+			// 남은 셀을 다시 판정할 여지를 없애면 안 된다.
+			if err == nil && res.Aborted == "" && !res.Inconclusive {
 				discardE2EState() // 완주했으면 재개용 상태 정리
 			}
 		}
@@ -666,12 +727,9 @@ func (a *App) RunE2E(profileID, scenarioJSON, optionsJSON string) error {
 			wruntime.EventsEmit(a.ctx, "e2e:error", err.Error())
 			return
 		}
-		verdict := "FAIL"
-		switch {
-		case res.Aborted != "":
+		verdict := e2e.Verdict(res)
+		if res.Aborted != "" {
 			verdict = "중단됨"
-		case res.Pass:
-			verdict = "PASS"
 		}
 		notify("rawgen E2E "+verdict, fmt.Sprintf("verify %d회 실행 · 리포트 자동 저장됨", res.VerifyRuns))
 		wruntime.WindowShow(a.ctx)

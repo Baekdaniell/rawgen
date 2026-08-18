@@ -46,8 +46,8 @@ export function ExportProfiles() {
   return window['go']['main']['App']['ExportProfiles']();
 }
 
-export function Generate(arg1, arg2, arg3) {
-  return window['go']['main']['App']['Generate'](arg1, arg2, arg3);
+export function Generate(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['Generate'](arg1, arg2, arg3, arg4);
 }
 
 export function History(arg1) {

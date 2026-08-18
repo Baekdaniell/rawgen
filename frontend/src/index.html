@@ -77,6 +77,25 @@
                 timezone
                 <input id="pfTimezone" type="text" value="Asia/Seoul" />
               </label>
+              <details class="advanced">
+                <summary>고급 — 테이블명 오버라이드</summary>
+                <p class="hint">
+                  배포본 테이블명이 표준과 다를 때만 채웁니다. 비워두면 괄호 안 기본값을 씁니다.
+                  값이 틀리면 조회가 실패하고 그 층은 "대조 불가"로 표시됩니다.
+                </p>
+                <div class="field-row">
+                  <label>checkvalue (CH) <input id="pfTblCheckvalue" type="text" placeholder="checkvalue" /></label>
+                  <label>daily_stats (CH) <input id="pfTblDailyCh" type="text" placeholder="daily_stats" /></label>
+                </div>
+                <div class="field-row">
+                  <label>daily_stats (MariaDB) <input id="pfTblDaily" type="text" placeholder="daily_stats" /></label>
+                  <label>hourly (MariaDB) <input id="pfTblHourly" type="text" placeholder="hourly_checkpoint_data_log" /></label>
+                </div>
+                <div class="field-row">
+                  <label>checkpoint <input id="pfTblCheckpoint" type="text" placeholder="checkpoint" /></label>
+                  <label>exclude_date <input id="pfTblExcludeDate" type="text" placeholder="exclude_date" /></label>
+                </div>
+              </details>
               <div class="top-actions">
                 <button id="saveProfile" class="primary">저장</button>
                 <button id="deleteProfile" class="secondary">삭제</button>
@@ -204,7 +223,7 @@
               <div class="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>CH hour</th><th>daily col</th><th>mode</th><th>min</th><th>max</th><th>avg</th><th></th></tr>
+                    <tr><th>CH hour</th><th>daily col</th><th>mode</th><th>min</th><th>max</th><th>avg</th><th title="그 시간대 행 중 NaN으로 만들 행 수">NaN 행</th><th></th></tr>
                   </thead>
                   <tbody id="hourRows"></tbody>
                 </table>
@@ -261,13 +280,13 @@
                 <h3>Hourly Expected</h3>
                 <select id="hourlyDaySelect" style="width: 260px"></select>
               </div>
-              <p class="hint">daily col = 종료 라벨(H+1) / hourly = 시작 라벨(H). 두 테이블의 라벨은 반대입니다.</p>
+              <p class="hint">daily col = 종료 라벨(H+1) / hourly = 시작 라벨(H). 두 테이블의 라벨은 반대입니다. NaN이 섞인 시간대는 count·avg가 폴백 경로(표시값)와 MV 경로(맨 오른쪽)로 갈립니다.</p>
               <div class="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>CH hour</th><th>daily col</th><th>hourly</th><th>count</th><th>min</th><th>max</th><th>avg</th><th>max_time</th></tr>
+                    <tr><th>CH hour</th><th>daily col</th><th>hourly</th><th>count</th><th>min</th><th>max</th><th>avg</th><th>max_time</th><th title="NaN 행 수 / MV 경로(전체 기준) 기대">NaN · MV 기대</th></tr>
                   </thead>
-                  <tbody id="hourlyPreview"><tr><td colspan="8" class="hint">Preview를 실행하세요.</td></tr></tbody>
+                  <tbody id="hourlyPreview"><tr><td colspan="9" class="hint">Preview를 실행하세요.</td></tr></tbody>
                 </table>
               </div>
             </article>
@@ -282,6 +301,15 @@
         <section id="generate" class="section">
           <article class="panel danger-zone">
             <h3>실행 전 확인</h3>
+            <div id="genNaNBox" class="warning-box" style="display: none">
+              <b>이 시나리오는 NaN 행을 주입합니다.</b>
+              NaN이 섞인 (날짜 × cp)는 MV 경로와 checkvalue 폴백 경로의 통계가 서로 달라지므로,
+              이후 다른 검증의 클린 기준으로 쓸 수 없습니다. TestOnly 프로파일에서만 가능합니다.
+              <label class="toggle">
+                <input id="genNaNConfirm" type="checkbox" />
+                <span id="genNaNText">NaN 주입을 확인했습니다</span>
+              </label>
+            </div>
             <pre id="genSummary" class="codebox" style="min-height: 140px">Preview를 먼저 실행하세요.</pre>
             <label class="toggle">
               <input id="genConfirm" type="checkbox" />

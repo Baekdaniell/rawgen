@@ -70,6 +70,8 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 function fmt(n, d = 6) {
+  // 백엔드는 NaN/Inf를 JSON 숫자로 보낼 수 없어 문자열로 보낸다(model/jsonfloat.go).
+  if (n === "NaN" || n === "Inf" || n === "-Inf") return n;
   if (n === null || n === undefined || Number.isNaN(n)) return "NULL";
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: d });
 }
@@ -208,12 +210,14 @@ function profileFromForm() {
       user: $("pfChUser").value.trim() || "default",
       password: $("pfChPw").value,
     },
-    checkvalueTable: "",
-    dailyStatsChTable: "",
-    dailyStatsTable: "",
-    hourlyTable: "",
-    checkpointTable: "",
-    excludeDateTable: "",
+    // 빈 값 = "기본 테이블명 사용". 백엔드가 빈 값을 기존 설정으로 머지하므로
+    // 여기서 하드코딩 ""를 보내면 배포본 오버라이드가 조용히 지워진다.
+    checkvalueTable: $("pfTblCheckvalue").value.trim(),
+    dailyStatsChTable: $("pfTblDailyCh").value.trim(),
+    dailyStatsTable: $("pfTblDaily").value.trim(),
+    hourlyTable: $("pfTblHourly").value.trim(),
+    checkpointTable: $("pfTblCheckpoint").value.trim(),
+    excludeDateTable: $("pfTblExcludeDate").value.trim(),
   };
 }
 
@@ -232,6 +236,12 @@ function fillForm(p) {
   $("pfChDb").value = p?.clickhouse?.database || "liz";
   $("pfChUser").value = p?.clickhouse?.user || "default";
   $("pfChPw").value = p?.clickhouse?.password || "";
+  $("pfTblCheckvalue").value = p?.checkvalueTable || "";
+  $("pfTblDailyCh").value = p?.dailyStatsChTable || "";
+  $("pfTblDaily").value = p?.dailyStatsTable || "";
+  $("pfTblHourly").value = p?.hourlyTable || "";
+  $("pfTblCheckpoint").value = p?.checkpointTable || "";
+  $("pfTblExcludeDate").value = p?.excludeDateTable || "";
   renderSideProfile();
 }
 
@@ -263,6 +273,8 @@ async function loadProfiles(selectId) {
 // ---------- Targets ----------
 
 function renderSelectedCps() {
+  // cp 목록 변경도 시나리오 변경이다 — 확인한 Preview의 대상과 달라지면 게이트를 닫는다.
+  invalidatePreviewIfChanged();
   const box = $("cpSelected");
   const ids = [...state.selectedCps].sort((a, b) => a - b);
   box.innerHTML = ids.length
@@ -304,6 +316,7 @@ function renderHourRows() {
         <td><input type="number" step="0.001" value="${row.goal.min}" data-oi="${i}" data-of="min" /></td>
         <td><input type="number" step="0.001" value="${row.goal.max}" data-oi="${i}" data-of="max" /></td>
         <td><input type="number" step="0.001" value="${row.goal.avg}" data-oi="${i}" data-of="avg" /></td>
+        <td><input type="number" min="0" step="1" value="${row.nanCount || 0}" data-oi="${i}" data-of="nanCount" /></td>
         <td><button class="remove" data-remove-hour="${i}">×</button></td>
       </tr>`,
     )
@@ -328,6 +341,7 @@ function buildScenario() {
       hour: Number(o.hour),
       mode: o.mode,
       goal: { min: Number(o.goal.min), max: Number(o.goal.max), avg: Number(o.goal.avg) },
+      nanCount: Number(o.nanCount) || 0,
     })),
     seed: Number($("seed").value),
     batchSize: Number($("batchSize").value) || 100000,
@@ -335,9 +349,34 @@ function buildScenario() {
   };
 }
 
+// invalidatePreview는 시나리오가 바뀌었을 때 주입 게이트를 원위치시킨다.
+// preview 존재 여부만 보고 INSERT를 허용하면, 화면에는 옛 대상이 남은 채
+// 확인한 적 없는 (날짜×cp)에 실제로 주입된다.
+function invalidatePreview() {
+  if (!state.preview) return;
+  state.preview = null;
+  const cb = $("genConfirm");
+  if (cb) cb.checked = false;
+  const sum = $("genSummary");
+  if (sum) sum.textContent = "시나리오가 바뀌었습니다 — Preview를 다시 실행하세요.";
+  updateInsertButton();
+  updateStepStates();
+}
+
+// 폼과 preview의 시나리오가 다르면 무효화한다.
+function invalidatePreviewIfChanged() {
+  if (!state.preview) return;
+  try {
+    if (JSON.stringify(state.preview.scenario) !== JSON.stringify(buildScenario())) invalidatePreview();
+  } catch {
+    invalidatePreview();
+  }
+}
+
 function refreshScenarioJson() {
   const s = buildScenario();
   $("scenarioJson").textContent = JSON.stringify(s, null, 2);
+  invalidatePreviewIfChanged();
   try {
     localStorage.setItem(SCENARIO_STORE_KEY, JSON.stringify(s));
   } catch {}
@@ -373,10 +412,12 @@ function applyScenario(s) {
     hour: o.hour,
     mode: o.mode || "goal",
     goal: { min: o.goal?.min ?? 0, max: o.goal?.max ?? 0, avg: o.goal?.avg ?? 0 },
+    nanCount: o.nanCount ?? 0,
   }));
   renderHourRows();
   renderSelectedCps();
   if (state.checkpoints.length) renderCheckpointTable();
+  invalidatePreviewIfChanged();
 }
 
 // ---------- Preview ----------
@@ -427,6 +468,7 @@ function renderPreview(pv) {
     `경고 ${pv.warnings?.length || 0}건${pv.warnings?.length ? " — 미리보기 탭에서 확인" : ""}`,
     ``,
     `주입 후 이 (날짜 × cp)는 다른 검증의 클린 대조 기준으로 사용 금지.`,
+    ...(scenarioHasNaN() ? [`NaN 주입 포함 — MV 경로와 checkvalue 폴백 경로의 통계가 갈립니다(의도된 경로 차이 검출).`] : []),
   ].join("\n");
   updateInsertButton();
   updateStepStates();
@@ -441,20 +483,41 @@ function renderHourly(idx) {
   $("hourlyPreview").innerHTML = d.hours
     .map((h) => {
       const st = h.stats;
-      return `<tr><td>${h.hour}</td><td>${h.dailyCol}</td><td>${h.hourlyCol}</td>
+      const all = h.statsAll || st;
+      // NaN이 있으면 표시값(폴백 경로 기대)과 MV 경로 기대가 갈린다 — 둘 다 보여준다.
+      const nanCell = st.nanCount
+        ? `<span class="nan-mark">NaN ${st.nanCount}행</span><br>count ${fmt(all.count, 0)} · avg ${fmt(all.avg, 6)}`
+        : "-";
+      return `<tr class="${st.nanCount ? "row-nan" : ""}"><td>${h.hour}</td><td>${h.dailyCol}</td><td>${h.hourlyCol}</td>
         <td>${fmt(st.count, 0)}</td><td>${st.count ? fmt(st.min, 3) : "NULL"}</td>
         <td>${st.count ? fmt(st.max, 3) : "NULL"}</td><td>${st.count ? fmt(st.avg, 6) : "NULL"}</td>
-        <td>${esc(st.maxTime || "NULL")}</td></tr>`;
+        <td>${esc(st.maxTime || "NULL")}</td><td>${nanCell}</td></tr>`;
     })
     .join("");
 }
 
 // ---------- Generate ----------
 
+// scenarioHasNaN은 현재 폼 기준으로 NaN 주입 여부를 본다.
+function scenarioHasNaN() {
+  return state.overrides.some((o) => Number(o.nanCount) > 0 && o.mode !== "null");
+}
+
+function updateNaNBox() {
+  const has = scenarioHasNaN();
+  const box = $("genNaNBox");
+  if (!box) return has;
+  box.style.display = has ? "" : "none";
+  if (!has) $("genNaNConfirm").checked = false;
+  return has;
+}
+
 function updateInsertButton() {
   const p = currentProfile();
   const anyRun = state.running || e2eState.running;
-  const ok = !!state.preview && !!p?.testOnly && $("genConfirm").checked && !anyRun;
+  // NaN 주입은 일반 확인과 별도의 확인을 요구한다(실수로 켜지지 않게).
+  const nanOK = !updateNaNBox() || $("genNaNConfirm").checked;
+  const ok = !!state.preview && !!p?.testOnly && $("genConfirm").checked && nanOK && !anyRun;
   $("runInsert").disabled = !ok;
   $("runDry").disabled = anyRun;
   $("cancelRun").disabled = !state.running;
@@ -483,13 +546,18 @@ async function startRun(dryRun) {
   if (!state.preview) throw new Error("Preview를 먼저 실행하세요.");
   const p = currentProfile();
   if (!p) throw new Error("프로파일을 선택하세요.");
+  // 마지막 방어선: 확인한 시나리오와 실제로 보낼 시나리오가 같은지 대조한다.
+  if (JSON.stringify(state.preview.scenario) !== JSON.stringify(buildScenario())) {
+    invalidatePreview();
+    throw new Error("확인한 Preview와 현재 시나리오가 다릅니다 — Preview를 다시 실행해 대상을 확인하세요.");
+  }
   state.running = true;
   updateInsertButton();
   $("genLog").textContent = "";
   setProgress(0, 1);
   genLog(dryRun ? "dry-run 시작 (DB 미접근)" : `INSERT 시작 → ${p.clickhouse.host}:${p.clickhouse.port}`);
   try {
-    await api().Generate(p.id, JSON.stringify(buildScenario()), dryRun);
+    await api().Generate(p.id, JSON.stringify(buildScenario()), dryRun, !!$("genNaNConfirm")?.checked);
   } catch (err) {
     state.running = false;
     updateInsertButton();
@@ -596,10 +664,13 @@ function renderE2ECells(cells) {
     )
     .join("");
 
-  const done = e2eState.cells.filter((c) => c.status !== "wait" && c.status !== "recheck").length;
+  // skip은 "판정한 셀"이 아니라 "대조하지 못한 셀"이다. 완료로 세면 pass 0인
+  // 실행도 진행률 100%로 보인다. 판정(pass/fail)만 진행으로 센다.
+  const judged = e2eState.cells.filter((c) => c.status === "pass" || c.status === "fail").length;
   const total = e2eState.cells.length;
-  const pct = total ? Math.min(100, (done / total) * 100) : 0;
+  const pct = total ? Math.min(100, (judged / total) * 100) : 0;
   $("e2eProgressBar").style.width = pct + "%";
+  $("e2eProgressBar").classList.toggle("bar-warn", counts.skip > 0 && judged === 0);
 
   // 다음 판정 대상(가장 빠른 pending due) 강조
   let nextKey = null;
@@ -644,13 +715,15 @@ function renderPreflight(pf) {
   parts.push(row(pf.today, "오늘 날짜", pf.today ? "시나리오에 포함" : "미포함 — E2E는 오늘 날짜 전용"));
   if (pf.plan) {
     const est = pf.plan.lastDue ? new Date(pf.plan.lastDue) : null;
-    parts.push(
-      row(
-        pf.plan.skipCells < pf.plan.totalCells,
-        "셀 계획",
-        `총 ${pf.plan.totalCells}개 (제외 ${pf.plan.skipCells})${est ? ` · 예상 종료 ~${est.getMonth() + 1}/${est.getDate()} ${hm(est)}` : ""}`,
-      ),
-    );
+    const text = `총 ${pf.plan.totalCells}개 (제외 ${pf.plan.skipCells})${est ? ` · 예상 종료 ~${est.getMonth() + 1}/${est.getDate()} ${hm(est)}` : ""}`;
+    if (pf.plan.skipCells >= pf.plan.totalCells) {
+      parts.push(row(false, "셀 계획", text));
+    } else if (pf.plan.skipCells > 0) {
+      // 제외 셀이 있으면 그만큼 검증되지 않는다 — 초록으로 보이면 안 된다.
+      parts.push(`<div class="pf-row pf-warn"><span class="pf-label">셀 계획</span><span>${esc(text)} — 제외분은 검증되지 않습니다</span></div>`);
+    } else {
+      parts.push(row(true, "셀 계획", text));
+    }
   }
   for (const w of pf.warnings || []) parts.push(`<div class="pf-row pf-warn"><span class="pf-label">주의</span><span>${esc(w)}</span></div>`);
   for (const f of pf.fatal || []) parts.push(`<div class="pf-row pf-bad"><span class="pf-label">차단</span><span>${esc(f)}</span></div>`);
@@ -682,27 +755,58 @@ function hideResumeBanner() {
   $("e2eResume").style.display = "none";
 }
 
+// confirmDiscard는 두 번 눌러야 실행되는 확인이다. 저장 상태를 버리면 되돌릴 수 없고
+// (보존 창이 지난 셀은 재판정 불가) 네이티브 모달은 WebView를 멈추게 하므로 인라인으로 처리한다.
+let discardArmed = false;
+function confirmDiscard() {
+  const btn = $("resumeDiscard");
+  if (discardArmed) return true;
+  discardArmed = true;
+  const original = btn.textContent;
+  btn.textContent = "되돌릴 수 없습니다 — 다시 클릭";
+  btn.classList.add("danger");
+  setTimeout(() => {
+    discardArmed = false;
+    const b = $("resumeDiscard");
+    if (b) {
+      b.textContent = original;
+      b.classList.remove("danger");
+    }
+  }, 5000);
+  return false;
+}
+
 async function checkPendingE2E() {
   const st = await api().PendingE2E();
   if (!st?.exists) return;
   const banner = $("e2eResume");
   banner.style.display = "";
-  banner.innerHTML = `<span>미완료 E2E 저장 상태가 있습니다 — 시작 ${esc(st.startedAt || "?")} · 셀 ${st.doneCells}/${st.totalCells} 판정 완료${st.aborted ? " · 중단: " + esc(st.aborted) : ""}</span>
+  // 대상 DB를 함께 보여준다 — 다른 프로파일로 이어받으면 주입되지 않은 DB에서
+  // L1이 불합격하고, 그 중단이 저장된 판정분을 위협한다.
+  const target = st.target ? ` · 대상 ${esc(st.target)}` : "";
+  const noCells = !!st.noCells;
+  banner.innerHTML = `<span>미완료 E2E 저장 상태가 있습니다 — 시작 ${esc(st.startedAt || "?")} · 셀 ${st.doneCells}/${st.totalCells} 판정 완료${st.aborted ? " · 중단: " + esc(st.aborted) : ""}${st.profile ? " · 프로파일 " + esc(st.profile) : ""}${target}${
+    noCells ? " <b>· 셀 계획 이전에 중단되어 재개할 수 없습니다 (처음부터 실행하세요)</b>" : ""
+  }</span>
     <span class="resume-actions">
-      <button id="resumeGo" class="primary small">이어서 하기</button>
+      <button id="resumeGo" class="primary small"${noCells ? " disabled" : ""}>이어서 하기</button>
       <button id="resumeDiscard" class="secondary small">상태 버리기</button>
     </span>`;
-  $("resumeGo").addEventListener(
-    "click",
-    guard(async () => {
-      if (st.scenarioJson) applyScenario(JSON.parse(st.scenarioJson));
-      setSection("e2e");
-      await startE2E(true);
-    }),
-  );
+  if (!noCells) {
+    $("resumeGo").addEventListener(
+      "click",
+      guard(async () => {
+        if (st.scenarioJson) applyScenario(JSON.parse(st.scenarioJson));
+        setSection("e2e");
+        await startE2E(true);
+      }),
+    );
+  }
   $("resumeDiscard").addEventListener(
     "click",
     guard(async () => {
+      // 되돌릴 수 없다. 보존 창이 지난 셀은 다시 판정할 수 없으므로 한 번 묻는다.
+      if (!confirmDiscard()) return;
       await api().DiscardE2EState();
       hideResumeBanner();
     }),
@@ -858,7 +962,7 @@ $("cpSelected").addEventListener("click", (e) => {
 });
 
 $("addHour").addEventListener("click", () => {
-  state.overrides.push({ hour: 12, mode: "goal", goal: { min: 20, max: 40, avg: 30 } });
+  state.overrides.push({ hour: 12, mode: "goal", goal: { min: 20, max: 40, avg: 30 }, nanCount: 0 });
   renderHourRows();
 });
 // input마다 재렌더하면 포커스가 소실됨 — 상태만 갱신, hour 라벨 셀만 부분 갱신
@@ -867,6 +971,7 @@ $("hourRows").addEventListener("input", (e) => {
   const f = e.target.dataset.of;
   if (!Number.isInteger(i) || !f) return;
   if (f === "mode") state.overrides[i].mode = e.target.value;
+  else if (f === "nanCount") state.overrides[i].nanCount = Math.max(0, Number(e.target.value) || 0);
   else if (f === "hour") {
     state.overrides[i].hour = Number(e.target.value);
     const cell = document.querySelector(`[data-maria-cell="${i}"]`);
@@ -923,6 +1028,7 @@ $("hourlyDaySelect").addEventListener("change", () => renderHourly(Number($("hou
 $("copyDaily").addEventListener("click", guard(async () => copyTableTSV($("dailyExpectedTable"), $("copyDaily"))));
 
 $("genConfirm").addEventListener("change", updateInsertButton);
+$("genNaNConfirm").addEventListener("change", updateInsertButton);
 $("runDry").addEventListener("click", guard(() => startRun(true)));
 $("runInsert").addEventListener("click", guard(() => startRun(false)));
 $("cancelRun").addEventListener(
@@ -1023,11 +1129,20 @@ function bindRuntimeEvents() {
   });
   rt().EventsOn("gen:done", (res) => {
     state.running = false;
-    state.lastRunOk = !!res && !res.error && !res.canceled;
+    // readback은 옵션이 아니라 고정 단계다(중복·결손 검출). 실패를 완료로 표시하면
+    // 그 뒤 나온 불일치를 제품 버그로 오인 보고하게 된다.
+    const days = res?.days || [];
+    const rbOk = days.length > 0 && days.every((d) => d.readbackOk);
+    state.lastRunOk = !!res && !res.error && !res.canceled && rbOk;
     updateInsertButton();
     updateStepStates();
-    setProgress(1, 1);
+    if (state.lastRunOk) setProgress(1, 1);
     renderRunResult(res);
+    if (res && !res.error && !res.canceled && !rbOk) {
+      showError(
+        "readback 실패 — 주입이 확인되지 않았습니다. 이 상태의 검증 결과는 제품 판정 근거로 쓸 수 없습니다. 로그의 readback 사유를 확인하고 대상 범위를 정리한 뒤 다시 주입하세요."
+      );
+    }
     loadHistory().catch(() => {});
   });
   rt().EventsOn("gen:error", (msg) => {
@@ -1060,7 +1175,14 @@ function bindRuntimeEvents() {
     updateE2EButtons();
     updateInsertButton();
     renderE2ECells(res.cells);
-    const verdict = res.aborted ? `중단 (${res.aborted})` : res.pass ? "PASS" : "FAIL";
+    const c = res.counts || {};
+    const verdict = res.aborted
+      ? `중단 (${res.aborted})`
+      : res.pass
+        ? "PASS"
+        : res.inconclusive
+          ? `미검증 (판정 ${c.pass || 0} / 미검증 ${c.skip || 0}) — 통과로 결재할 수 없음`
+          : "FAIL";
     $("e2eStatus").textContent = verdict;
     e2eLog(`E2E 종료: ${verdict} — verify ${res.verifyRuns}회`);
     if (res.finalVerify) renderVerify(res.finalVerify);

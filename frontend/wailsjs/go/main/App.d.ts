@@ -29,7 +29,7 @@ export function E2EReport():Promise<string>;
 
 export function ExportProfiles():Promise<string>;
 
-export function Generate(arg1:string,arg2:string,arg3:boolean):Promise<void>;
+export function Generate(arg1:string,arg2:string,arg3:boolean,arg4:boolean):Promise<void>;
 
 export function History(arg1:number):Promise<Array<executor.RunResult>>;
 

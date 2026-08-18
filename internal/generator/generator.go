@@ -106,7 +106,12 @@ func Values(count int, g model.Goal, seed int64, label string) ([]float64, float
 }
 
 // FormatData는 driver_code별 data 문자열을 만든다.
+// NaN은 포맷 접미사 없이 "NaN"으로 적는다(제품이 문자열을 파싱하는 경로에서
+// "NaN %" 같은 값이 또 다른 변수가 되지 않도록).
 func FormatData(v float64, driverCode string) string {
+	if math.IsNaN(v) {
+		return "NaN"
+	}
 	if driverCode == "numeric_percent" {
 		return fmt.Sprintf("%.3f %%", v)
 	}
@@ -119,12 +124,25 @@ func HourRows(s *model.Scenario, cp int64, day time.Time, hour int, loc *time.Lo
 	if goal == nil {
 		return nil, 0, nil
 	}
-	count := 3600 / s.IntervalSec
+	total := 3600 / s.IntervalSec
+	nanCount := s.NaNCountForHour(hour)
+	if nanCount < 0 {
+		nanCount = 0
+	}
+	if nanCount >= total {
+		return nil, 0, fmt.Errorf("hour %d: NaN %d행이 전체 행 수(%d) 이상입니다", hour, nanCount, total)
+	}
+	// 정상 행은 NaN을 뺀 나머지 개수로 goal을 만족시킨다. 그래야 finite 기준 기대값이
+	// 목표와 정확히 일치하고, NaN은 "섞인 오염"으로만 작용한다.
+	count := total - nanCount
 	dateText := day.Format("2006-01-02")
 	seed := SeedFor(s.Seed, cp, dateText, hour)
 	values, residual, err := Values(count, *goal, seed, fmt.Sprintf("%s hour %d", dateText, hour))
 	if err != nil {
 		return nil, 0, err
+	}
+	if nanCount > 0 {
+		values = scatterNaN(values, nanCount, seed)
 	}
 	hourStart := time.Date(day.Year(), day.Month(), day.Day(), hour, 0, 0, 0, loc)
 	rows := make([]model.Row, len(values))
@@ -141,14 +159,70 @@ func HourRows(s *model.Scenario, cp int64, day time.Time, hour int, loc *time.Lo
 	return rows, residual, nil
 }
 
-// StatsFor는 행 목록의 통계를 계산한다. max_time 동률 시 earliest(제품 규칙과 동일).
+// scatterNaN은 정상 값 사이에 NaN을 흩뿌린다. 앞뒤로 몰리면 제품의 부분 집계·
+// 경계 처리와 얽혀 원인 분리가 어려워지므로 seed 기반으로 고르게 섞는다.
+// 반환 길이 = len(values) + nanCount.
+func scatterNaN(values []float64, nanCount int, seed int64) []float64 {
+	total := len(values) + nanCount
+	rng := rand.New(rand.NewSource(seed ^ 0x4e614e)) // "NaN"
+	// total개 자리 중 nanCount개를 균등 간격 + 지터로 고른다(결정적).
+	slots := make([]bool, total)
+	step := float64(total) / float64(nanCount)
+	for i := 0; i < nanCount; i++ {
+		pos := int(step*float64(i) + rng.Float64()*step)
+		for pos >= total {
+			pos--
+		}
+		for slots[pos] {
+			pos = (pos + 1) % total
+		}
+		slots[pos] = true
+	}
+	out := make([]float64, 0, total)
+	vi := 0
+	for i := 0; i < total; i++ {
+		if slots[i] {
+			out = append(out, math.NaN())
+			continue
+		}
+		out = append(out, values[vi])
+		vi++
+	}
+	return out
+}
+
+// StatsFor는 행 목록의 finite 기준 통계다(NaN 제외).
+// 제품의 checkvalue 폴백 경로(WHERE isFinite(raw_data))가 만들어야 할 값이며,
+// NaN이 없으면 StatsAllFor와 같다. max_time 동률 시 earliest(제품 규칙과 동일).
 func StatsFor(rows []model.Row) model.Stats {
+	return statsOf(rows, true)
+}
+
+// StatsAllFor는 전체 기준 통계다(NaN 포함). 제품의 MV 경로(countState/avgState에
+// 필터가 없음)가 만들어야 할 값이며, NaN이 하나라도 있으면 Avg는 NaN이 된다.
+func StatsAllFor(rows []model.Row) model.Stats {
+	return statsOf(rows, false)
+}
+
+func statsOf(rows []model.Row, finiteOnly bool) model.Stats {
 	if len(rows) == 0 {
 		return model.Stats{}
 	}
-	st := model.Stats{Count: int64(len(rows)), Min: math.Inf(1), Max: math.Inf(-1)}
+	st := model.Stats{Min: math.Inf(1), Max: math.Inf(-1)}
+	var nan int64
 	for i := range rows {
 		v := rows[i].RawData
+		if math.IsNaN(v) {
+			nan++
+			if finiteOnly {
+				continue // 폴백 경로는 isFinite로 걸러낸다
+			}
+			// 전체 기준: count에 포함되고 합계를 오염시킨다(avg가 NaN이 된다).
+			st.Count++
+			st.Sum += v
+			continue
+		}
+		st.Count++
 		if v < st.Min {
 			st.Min = v
 		}
@@ -158,6 +232,10 @@ func StatsFor(rows []model.Row) model.Stats {
 			t := rows[i].LogDate
 			st.MaxTime = &t
 		}
+	}
+	st.NaNCount = nan
+	if st.Count == 0 {
+		return model.Stats{NaNCount: nan}
 	}
 	st.Avg = st.Sum / float64(st.Count)
 	if st.MaxTime != nil {

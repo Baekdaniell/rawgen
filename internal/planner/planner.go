@@ -49,11 +49,13 @@ func Build(s model.Scenario, now time.Time) (*model.Preview, error) {
 					Hour:     hour,
 					DailyCol: model.DailyColSuffix(hour),
 					HourlyID: model.HourlyLabel(hour),
-					Stats:    generator.StatsFor(rows),
+					Stats:    generator.StatsFor(rows),    // finite 기준(폴백 경로 기대)
+					StatsAll: generator.StatsAllFor(rows), // 전체 기준(MV 경로 기대)
 				})
 				dayRows = append(dayRows, rows...)
 			}
 			de.Stats = generator.StatsFor(dayRows)
+			de.StatsAll = generator.StatsAllFor(dayRows)
 			de.RowCount = int64(len(dayRows))
 			p.Days = append(p.Days, de)
 			p.TotalRows += de.RowCount

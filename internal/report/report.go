@@ -112,23 +112,44 @@ func Markdown(b Bundle) string {
 		for _, warn := range b.Verify.Warnings {
 			fmt.Fprintf(&w, "- 주의: %s\n", warn)
 		}
-		w.WriteString("\n| layer | ran | result | checked | mismatches |\n|---|---|---|---|---|\n")
+		w.WriteString("\n| layer | ran | result | checked | mismatches | note |\n|---|---|---|---|---|---|\n")
 		for _, lr := range []verify.LayerResult{b.Verify.L1Raw, b.Verify.L1MV, b.Verify.L2Daily, b.Verify.L2Hourly} {
 			status := "-"
 			if lr.Ran {
-				if lr.Pass {
+				switch {
+				case lr.Errored:
+					// 대조 실패는 PASS/FAIL과 다른 상태다. FAIL로 뭉뚱그리면 "제품이 틀렸다"로
+					// 읽히고, PASS로 두면 미검증이 통과로 둔갑한다.
+					status = "ERROR(대조 불가)"
+				case lr.Pass:
 					status = "PASS"
-				} else {
+				default:
 					status = "FAIL"
 				}
 			}
-			fmt.Fprintf(&w, "| %s | %v | %s | %d | %d |\n", lr.Name, lr.Ran, status, lr.Checked, len(lr.Mismatches))
+			note := lr.Note
+			if lr.Errored && lr.Err != "" {
+				note = lr.Err
+			}
+			fmt.Fprintf(&w, "| %s | %v | %s | %d | %d | %s |\n", lr.Name, lr.Ran, status, lr.Checked, len(lr.Mismatches), note)
 		}
 		overall := "FAIL"
 		if b.Verify.Pass {
 			overall = "PASS"
 		}
 		fmt.Fprintf(&w, "\n**전체 판정: %s**\n", overall)
+
+		// 경로 차이는 결함이 아니라 관측이다. 불일치 표와 섞지 않고 따로 낸다.
+		if len(b.Verify.PathDiffs) > 0 {
+			w.WriteString("\n### NaN 경로 차이 관측 (결함 아님)\n\n")
+			w.WriteString("NaN이 섞인 시간대는 MV 경로(필터 없음)와 checkvalue 폴백 경로(isFinite)가 서로 다른 통계를 만듭니다. ")
+			w.WriteString("matched 열이 실측이 어느 경로의 기대와 맞았는지 보여줍니다(none = 두 경로 어느 쪽과도 불일치 = 결함).\n\n")
+			w.WriteString("| layer | cp | date | hour | field | NaN행 | finite 기대(폴백) | 전체 기대(MV) | 실측 | matched |\n|---|---|---|---|---|---|---|---|---|---|\n")
+			for _, d := range b.Verify.PathDiffs {
+				fmt.Fprintf(&w, "| %s | %d | %s | %d | %s | %d | %s | %s | %s | %s |\n",
+					d.Layer, d.CP, d.Date, d.Hour, d.Field, d.NaNRows, d.Finite, d.All, d.Actual, d.Matched)
+			}
+		}
 
 		all := allMismatches(b.Verify)
 		if len(all) > 0 {

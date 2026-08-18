@@ -56,6 +56,10 @@ type Cell struct {
 	Attempts   int               `json:"attempts"`
 	Note       string            `json:"note,omitempty"`
 	Mismatches []verify.Mismatch `json:"mismatches,omitempty"`
+	// PlannedSkip은 "계획 단계에서 이미 검증 불가로 정해진 셀"이다(과거 시간대 주입 등).
+	// 실행 중 강등된 skip(판정 시각을 놓침·대조 불가)과 구분해야 최종 판정에서
+	// 전자는 감점하지 않고 후자는 PASS를 막을 수 있다.
+	PlannedSkip bool `json:"plannedSkip,omitempty"`
 
 	dueAt time.Time
 }
@@ -101,8 +105,27 @@ type Result struct {
 	VerifyRuns       int                 `json:"verifyRuns"`
 	KeepGoing        bool                `json:"keepGoing,omitempty"`
 	Pass             bool                `json:"pass"`
-	Aborted          string              `json:"aborted,omitempty"`
-	Resumed          bool                `json:"resumed,omitempty"`
+	// Inconclusive는 "실패는 없지만 통과라고 말할 수도 없다"는 뜻이다.
+	// 판정된 셀이 하나도 없거나, 실행 중 대조 불가로 강등된 셀이 남아 있는 경우다.
+	// PASS/FAIL 2값만 두면 'pass 0 / skip 25'인 실행이 헤드라인 PASS가 된다.
+	Inconclusive bool `json:"inconclusive,omitempty"`
+	Counts       Counts `json:"counts"`
+	Aborted      string `json:"aborted,omitempty"`
+	Resumed      bool   `json:"resumed,omitempty"`
+	// Target은 대상 DB 지문이다. 재개 시 다른 프로파일로 이어받는 것을 막는다
+	// (프로파일 이름은 바뀔 수 있으므로 호스트·포트·DB명으로 만든다).
+	Target   string   `json:"target,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// Counts는 셀 판정 집계다. 리포트·UI가 같은 수치를 보게 한다.
+type Counts struct {
+	Pass        int `json:"pass"`
+	Fail        int `json:"fail"`
+	Skip        int `json:"skip"`        // 전체 skip
+	RuntimeSkip int `json:"runtimeSkip"` // 그중 실행 중 강등(판정 시각을 놓침)
+	Pending     int `json:"pending"`
+	Total       int `json:"total"`
 }
 
 // PlanSummary는 실행 전 사전 점검(preflight)용 계획 요약이다.
@@ -181,6 +204,7 @@ func planCells(pv *model.Preview, injectAt time.Time, loc *time.Location, skipDa
 			lastEvent := day.Add(time.Duration(he.Hour+1)*time.Hour + 5*time.Minute)
 			if !injectAt.Before(lastEvent) {
 				c.Status = StatusSkip
+				c.PlannedSkip = true
 				c.Note = "주입 시점에 이 시간대의 통계 생성((H+1):05)이 이미 지나 대조 불가 — 백필은 해당 시간대 행이 통째로 0일 때만 재생성한다"
 			}
 			c.setDue(due)
@@ -197,6 +221,7 @@ func planCells(pv *model.Preview, injectAt time.Time, loc *time.Location, skipDa
 			}
 			if !injectAt.Before(dailyEvent) {
 				d.Status = StatusSkip
+				d.PlannedSkip = true
 				d.Note = "주입 시점에 일별 통계 생성(익일 00:05)이 이미 지나 대조 불가"
 			}
 			d.setDue(due)
@@ -262,22 +287,47 @@ func Run(ctx context.Context, p profile.Profile, s model.Scenario, opt Options, 
 		return nil, err
 	}
 
-	res := &Result{Scenario: s, Profile: p.Name, StartedAt: time.Now().Format(time.RFC3339), KeepGoing: opt.KeepGoing}
+	res := &Result{Scenario: s, Profile: p.Name, StartedAt: time.Now().Format(time.RFC3339),
+		KeepGoing: opt.KeepGoing, Target: targetFingerprint(p)}
 	saveState := func() {
+		res.Counts = countCells(res.Cells)
 		if opt.OnState != nil {
 			opt.OnState(res)
 		}
 	}
 	abort := func(reason string) (*Result, error) {
+		// 셀 계획 이전에 중단되면 res.Cells가 비어 있다. 그대로 저장하면 재개 상태
+		// 파일이 빈 계획으로 덮여, 어젯밤 판정해 둔 셀이 통째로 사라진다
+		// (hourly 보존 창이 지나면 재판정도 불가능하다). 재개분을 되살려 저장한다.
+		if len(res.Cells) == 0 && opt.Resume != nil {
+			res.Cells = opt.Resume.Cells
+			res.WindowViolations = opt.Resume.WindowViolations
+			res.VerifyRuns = opt.Resume.VerifyRuns
+			res.Resumed = true
+		}
 		res.Aborted = reason
+		res.Inconclusive = true // 중단된 실행은 통과도 실패도 아니다
 		res.FinishedAt = time.Now().Format(time.RFC3339)
 		saveState()
 		emit(Progress{Phase: "done", Message: "중단: " + reason})
 		return res, nil
 	}
 
-	if opt.Resume != nil && !sameScenario(opt.Resume.Scenario, s) {
-		return nil, fmt.Errorf("재개 상태의 시나리오와 현재 시나리오가 다릅니다 — 저장된 시나리오를 불러온 뒤 다시 시도하세요")
+	if opt.Resume != nil {
+		if !sameScenario(opt.Resume.Scenario, s) {
+			return nil, fmt.Errorf("재개 상태의 시나리오와 현재 시나리오가 다릅니다 — 저장된 시나리오를 불러온 뒤 다시 시도하세요")
+		}
+		// 대상 DB가 다르면 주입되지 않은 DB에서 L1이 불합격하고, 그 중단이 위 abort를
+		// 타면서 진짜 진행분을 지운다. 주입·L1 이전에 막는다.
+		if opt.Resume.Target != "" && opt.Resume.Target != res.Target {
+			return nil, fmt.Errorf("재개 상태의 대상 DB(%s)와 현재 프로파일(%s)이 다릅니다 — 프로파일을 바꾼 뒤 다시 시도하세요",
+				opt.Resume.Target, res.Target)
+		}
+		// 셀 계획 이전에 중단된 상태로는 재개할 수 없다. 허용하면 셀 0개로 즉시
+		// 완주해 "대조 0건 PASS"가 나온다.
+		if len(opt.Resume.Cells) == 0 {
+			return nil, fmt.Errorf("저장 상태에 셀 계획이 없습니다 — 셀 계획 이전에 중단된 상태이므로 재개할 수 없습니다. 처음부터 실행하세요")
+		}
 	}
 
 	// ---- 1. 주입 ----
@@ -351,12 +401,18 @@ func Run(ctx context.Context, p profile.Profile, s model.Scenario, opt Options, 
 		done, total := cellCounts(res.Cells)
 		emit(Progress{Phase: "l1", Message: fmt.Sprintf("저장 상태 재개 — 셀 %d/%d 판정 완료분 복원", done, total)})
 	} else {
-		// 주입 생략 시엔 실제 주입 시각을 알 수 없으므로 시나리오 시작일 00시로
-		// 간주한다 — 이미 수확된 시간대를 다음 :05까지 다시 기다리지 않고 즉시 판정.
+		// 주입 생략 시엔 이 실행이 주입하지 않았으므로 "언제 주입됐는지"를 이력에서 찾는다.
+		// 시작일 00:00으로 낙관하면 (H+1):05를 이미 놓쳐 영원히 반영될 수 없는 시간대까지
+		// 판정 대상이 되어, 존재할 수 없는 행이 제품 결함(FAIL)으로 보고된다.
 		injectAt := time.Now()
 		if opt.SkipGenerate {
-			if d, err := time.ParseInLocation("2006-01-02", s.StartDate, loc); err == nil {
-				injectAt = d
+			if t, ok := ResolveInjectAt(s, loc); ok {
+				injectAt = t
+			} else {
+				// 이력에서 못 찾으면 낙관하지 않는다. now 기준이면 이미 지난 시간대는
+				// skip으로 계획되어 "미검증"으로 정직하게 남는다.
+				res.Warnings = append(res.Warnings,
+					"주입 생략: 이 시나리오의 주입 이력을 찾지 못해 현재 시각을 주입 시각으로 간주했습니다 — 이미 생성 시점이 지난 시간대는 skip으로 계획됩니다")
 			}
 		}
 		res.Cells = planCells(pv, injectAt, loc, opt.SkipDaily)
@@ -406,17 +462,12 @@ func Run(ctx context.Context, p profile.Profile, s model.Scenario, opt Options, 
 	}
 
 	// ---- 5. 종합 ----
-	res.Pass = res.L1Pass && len(res.WindowViolations) == 0
-	for _, c := range res.Cells {
-		if c.Status == StatusFail {
-			res.Pass = false
-		}
-	}
+	finalize(res)
 	res.FinishedAt = time.Now().Format(time.RFC3339)
 	saveState()
 	done, total := cellCounts(res.Cells)
 	emit(Progress{Phase: "done", Done: done, Total: total,
-		Message: fmt.Sprintf("E2E 완료: %s (verify %d회)", passText(res.Pass), res.VerifyRuns)})
+		Message: fmt.Sprintf("E2E 완료: %s (verify %d회)", Verdict(res), res.VerifyRuns)})
 	return res, nil
 }
 
@@ -482,17 +533,28 @@ func applyVerify(res *Result, vres *verify.Result, now time.Time, loc *time.Loca
 		var ms []verify.Mismatch
 		if c.Hour < 0 {
 			ms = daily[fmt.Sprintf("%d|%s", c.CP, c.Date)]
-			if !vres.L2Daily.Ran {
+			// Errored = 조회 자체가 실패한 회차. 그 "불일치 0"은 통과가 아니라 미검증이므로
+			// 어떤 셀도 확정하지 않고 pending으로 남겨 다음 회차에 다시 본다.
+			if !vres.L2Daily.Ran || vres.L2Daily.Errored {
 				continue
 			}
 		} else {
 			ms = hourly[fmt.Sprintf("%d|%s|%d", c.CP, c.Date, c.Hour)]
-			if !vres.L2Hourly.Ran {
+			if !vres.L2Hourly.Ran || vres.L2Hourly.Errored {
 				continue
 			}
 			// 판정 시점에 보존 창을 벗어났으면 verify가 이 시간대를 대조에서 제외한다.
 			// 그 상태의 "불일치 0"은 통과가 아니라 미검증이므로 skip으로 확정한다.
 			if loc != nil && !verify.HourlyInWindow(c.Date, c.Hour, now, loc) {
+				// 단, 이미 대조해서 불일치를 본 셀은 예외다. 그 셀을 skip으로 덮으면
+				// 검출된 결함이 "미검증"으로 세탁되어 리포트에서 사라진다.
+				// skip 규칙의 취지는 "한 번도 대조하지 못한 셀을 통과로 오판하지 않기"다.
+				if c.Attempts > 0 && len(c.Mismatches) > 0 {
+					c.Status = StatusFail
+					c.CheckedAt = now.Format("01-02 15:04")
+					c.Note = fmt.Sprintf("불일치 %d건 관측 후 보존 창 만료 — 재확인 기회를 놓쳐 확정", len(c.Mismatches))
+					continue
+				}
 				c.Status = StatusSkip
 				c.CheckedAt = now.Format("01-02 15:04")
 				c.Note = "판정 시점에 보존 창(당일+전일 23시)을 벗어나 대조 불가 — 판정 시각을 놓친 셀(미검증)"
@@ -514,11 +576,27 @@ func applyVerify(res *Result, vres *verify.Result, now time.Time, loc *time.Loca
 			c.Status = StatusFail
 			c.CheckedAt = now.Format("01-02 15:04")
 			c.Note = fmt.Sprintf("불일치 %d건 (판정 %d회 모두 불일치)", len(ms), c.Attempts)
-		} else {
-			c.Status = StatusRecheck
-			c.setDue(now.Add(opt.RetryDelay))
-			c.Note = fmt.Sprintf("불일치 %d건 — %s 재확인 예정 (%d/%d)", len(ms), c.Due, c.Attempts, opt.MaxAttempts)
+			continue
 		}
+		// 재확인 시각이 보존 창 만료를 넘으면 그때는 대조가 불가능하다.
+		// 창 안으로 당길 수 있으면 당기고, 남은 시간이 없으면 지금 확정한다.
+		due := now.Add(opt.RetryDelay)
+		if c.Hour >= 0 && loc != nil {
+			if end := verify.HourlyWindowEnd(c.Date, c.Hour, loc); !end.IsZero() && !due.Before(end) {
+				latest := end.Add(-2 * time.Minute)
+				if latest.After(now.Add(time.Minute)) {
+					due = latest
+				} else {
+					c.Status = StatusFail
+					c.CheckedAt = now.Format("01-02 15:04")
+					c.Note = fmt.Sprintf("불일치 %d건 — 보존 창 만료가 임박해 재확인 없이 확정", len(ms))
+					continue
+				}
+			}
+		}
+		c.Status = StatusRecheck
+		c.setDue(due)
+		c.Note = fmt.Sprintf("불일치 %d건 — %s 재확인 예정 (%d/%d)", len(ms), c.Due, c.Attempts, opt.MaxAttempts)
 	}
 }
 
@@ -568,11 +646,96 @@ func passText(pass bool) string {
 	return "FAIL"
 }
 
+// targetFingerprint는 대상 DB를 이름이 아니라 접속 좌표로 식별한다.
+func targetFingerprint(p profile.Profile) string {
+	p.ApplyDefaults()
+	return fmt.Sprintf("ch=%s:%d/%s maria=%s:%d/%s",
+		p.CH.Host, p.CH.Port, p.CH.Database, p.Maria.Host, p.Maria.Port, p.Maria.Database)
+}
+
+// countCells는 셀 판정을 집계한다. RuntimeSkip은 계획 단계 skip이 아니라
+// 실행 중 "대조 불가"로 강등된 셀 — 이게 남아 있으면 통과라고 말할 수 없다.
+func countCells(cells []*Cell) Counts {
+	var c Counts
+	for _, cell := range cells {
+		c.Total++
+		switch cell.Status {
+		case StatusPass:
+			c.Pass++
+		case StatusFail:
+			c.Fail++
+		case StatusSkip:
+			c.Skip++
+			if !cell.PlannedSkip {
+				c.RuntimeSkip++
+			}
+		default:
+			c.Pending++
+		}
+	}
+	return c
+}
+
+// finalize는 최종 판정을 계산한다. 커버리지 불변식이 핵심이다:
+// 판정된 셀이 하나도 없거나 실행 중 강등된 skip이 남아 있으면 PASS가 아니다.
+// (HANDOFF의 "보존 창 밖 셀은 skip" 규칙은 셀 단위 오판을 막지만, 런 단위에서
+// skip을 감점하지 않으면 'pass 0 / skip 25' 실행이 헤드라인 PASS가 된다.)
+func finalize(res *Result) {
+	res.Counts = countCells(res.Cells)
+	res.Pass = res.L1Pass && len(res.WindowViolations) == 0 &&
+		res.Counts.Fail == 0 && res.Counts.Pass > 0 && res.Counts.RuntimeSkip == 0
+	res.Inconclusive = !res.Pass && res.Counts.Fail == 0 && res.L1Pass && len(res.WindowViolations) == 0
+}
+
+// Verdict는 사람이 읽는 3값 판정이다.
+func Verdict(res *Result) string {
+	if res.Pass {
+		return "PASS"
+	}
+	if res.Inconclusive {
+		if res.Counts.Pass == 0 {
+			return fmt.Sprintf("INCONCLUSIVE (판정된 셀 0 / 미검증 %d)", res.Counts.Skip)
+		}
+		return fmt.Sprintf("INCONCLUSIVE (판정 %d / 미검증 %d)", res.Counts.Pass, res.Counts.Skip)
+	}
+	return "FAIL"
+}
+
+// ResolveInjectAt은 "주입 생략" 실행에서 이 시나리오가 실제로 주입된 시각을
+// 실행 이력에서 찾는다. 성공한 실주입(dry-run·취소·실패 제외)만 인정한다.
+func ResolveInjectAt(s model.Scenario, loc *time.Location) (time.Time, bool) {
+	runs, err := executor.History(50)
+	if err != nil {
+		return time.Time{}, false
+	}
+	var best time.Time
+	found := false
+	for _, r := range runs {
+		if r.DryRun || r.Canceled || r.Error != "" || r.FinishedAt == "" {
+			continue
+		}
+		if !sameScenario(r.Scenario, s) {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, r.FinishedAt)
+		if err != nil {
+			continue
+		}
+		if !found || t.After(best) {
+			best, found = t.In(loc), true
+		}
+	}
+	return best, found
+}
+
 // Markdown은 E2E 결과 리포트를 만든다. 셀 타임라인 + 최종 verify 리포트를 잇는다.
 func Markdown(r *Result) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# E2E 결과 — %s\n\n", r.Scenario.Name)
-	fmt.Fprintf(&b, "- 프로파일: %s / 판정: **%s**\n", r.Profile, passText(r.Pass))
+	fmt.Fprintf(&b, "- 프로파일: %s / 판정: **%s**\n", r.Profile, Verdict(r))
+	if r.Target != "" {
+		fmt.Fprintf(&b, "- 대상: %s\n", r.Target)
+	}
 	fmt.Fprintf(&b, "- 시작 %s → 종료 %s (verify %d회)\n", r.StartedAt, r.FinishedAt, r.VerifyRuns)
 	if r.Run != nil {
 		fmt.Fprintf(&b, "- 주입: run_id=%s rows=%d\n", r.Run.RunID, r.Run.TotalRows)
@@ -589,21 +752,25 @@ func Markdown(r *Result) string {
 	if r.Aborted != "" {
 		fmt.Fprintf(&b, "- ⚠️ 중단: %s\n", r.Aborted)
 	}
-
-	var pass, fail, skip, pending int
-	for _, c := range r.Cells {
-		switch c.Status {
-		case StatusPass:
-			pass++
-		case StatusFail:
-			fail++
-		case StatusSkip:
-			skip++
-		default:
-			pending++
+	for _, w := range r.Warnings {
+		fmt.Fprintf(&b, "- ⚠️ %s\n", w)
+	}
+	// 층 조회 실패는 "불일치 0"과 구분해서 반드시 보이게 한다.
+	if v := r.FinalVerify; v != nil {
+		for _, lr := range []verify.LayerResult{v.L1Raw, v.L1MV, v.L2Daily, v.L2Hourly} {
+			if lr.Errored {
+				fmt.Fprintf(&b, "- ⚠️ %s: 대조 실패 — %s (이 층의 '불일치 0'은 통과가 아닙니다)\n", lr.Name, lr.Err)
+			}
 		}
 	}
-	fmt.Fprintf(&b, "- 셀: pass %d / fail %d / skip %d / 미도래 %d (총 %d)\n\n", pass, fail, skip, pending, len(r.Cells))
+
+	cnt := countCells(r.Cells)
+	fmt.Fprintf(&b, "- 셀: pass %d / fail %d / skip(미검증) %d(그중 실행 중 강등 %d) / 미도래 %d (총 %d)\n",
+		cnt.Pass, cnt.Fail, cnt.Skip, cnt.RuntimeSkip, cnt.Pending, cnt.Total)
+	if cnt.RuntimeSkip > 0 {
+		fmt.Fprintf(&b, "- ⚠️ 판정 시각을 놓쳐 대조하지 못한 셀이 %d개입니다 — 이 실행은 통과로 결재할 수 없습니다\n", cnt.RuntimeSkip)
+	}
+	b.WriteString("\n")
 
 	b.WriteString("## 셀 타임라인 (cp × 날짜 × 시간, hour=-1은 일별)\n\n")
 	b.WriteString("| cp | date | hour | 판정 시점 | 상태 | 시도 | 비고 |\n|---|---|---|---|---|---|---|\n")
@@ -622,7 +789,8 @@ func Markdown(r *Result) string {
 
 	var failCells []*Cell
 	for _, c := range r.Cells {
-		if c.Status == StatusFail {
+		// 상태가 fail이 아니어도 관측된 불일치는 남긴다(재확인 대기 중 종료 등).
+		if c.Status == StatusFail || len(c.Mismatches) > 0 {
 			failCells = append(failCells, c)
 		}
 	}
