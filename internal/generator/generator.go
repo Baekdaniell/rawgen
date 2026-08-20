@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"oqt325/internal/model"
+	"rawgen/internal/model"
 )
 
 // SeedFor는 (base seed, cp, 날짜, hour) 조합을 FNV-1a로 혼합해 파생 seed를 만든다.

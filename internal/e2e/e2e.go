@@ -20,12 +20,12 @@ import (
 	"strings"
 	"time"
 
-	"oqt325/internal/executor"
-	"oqt325/internal/model"
-	"oqt325/internal/planner"
-	"oqt325/internal/profile"
-	"oqt325/internal/report"
-	"oqt325/internal/verify"
+	"rawgen/internal/executor"
+	"rawgen/internal/model"
+	"rawgen/internal/planner"
+	"rawgen/internal/profile"
+	"rawgen/internal/report"
+	"rawgen/internal/verify"
 )
 
 // 일별 통계는 익일 00:05 생성 시작 + writer 소요 여유.
@@ -320,7 +320,7 @@ func Run(ctx context.Context, p profile.Profile, s model.Scenario, opt Options, 
 		// 대상 DB가 다르면 주입되지 않은 DB에서 L1이 불합격하고, 그 중단이 위 abort를
 		// 타면서 진짜 진행분을 지운다. 주입·L1 이전에 막는다.
 		if opt.Resume.Target != "" && opt.Resume.Target != res.Target {
-			return nil, fmt.Errorf("재개 상태의 대상 DB(%s)와 현재 프로파일(%s)이 다릅니다 — 프로파일을 바꾼 뒤 다시 시도하세요",
+			return nil, fmt.Errorf("재개 상태의 대상 DB(%s)와 현재 세션(%s)이 다릅니다 — 세션을 바꾼 뒤 다시 시도하세요",
 				opt.Resume.Target, res.Target)
 		}
 		// 셀 계획 이전에 중단된 상태로는 재개할 수 없다. 허용하면 셀 0개로 즉시
@@ -732,7 +732,7 @@ func ResolveInjectAt(s model.Scenario, loc *time.Location) (time.Time, bool) {
 func Markdown(r *Result) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# E2E 결과 — %s\n\n", r.Scenario.Name)
-	fmt.Fprintf(&b, "- 프로파일: %s / 판정: **%s**\n", r.Profile, Verdict(r))
+	fmt.Fprintf(&b, "- 세션: %s / 판정: **%s**\n", r.Profile, Verdict(r))
 	if r.Target != "" {
 		fmt.Fprintf(&b, "- 대상: %s\n", r.Target)
 	}

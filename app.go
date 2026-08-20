@@ -15,15 +15,15 @@ import (
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"oqt325/internal/chdb"
-	"oqt325/internal/e2e"
-	"oqt325/internal/executor"
-	"oqt325/internal/mariadb"
-	"oqt325/internal/model"
-	"oqt325/internal/planner"
-	"oqt325/internal/profile"
-	"oqt325/internal/report"
-	"oqt325/internal/verify"
+	"rawgen/internal/chdb"
+	"rawgen/internal/e2e"
+	"rawgen/internal/executor"
+	"rawgen/internal/mariadb"
+	"rawgen/internal/model"
+	"rawgen/internal/planner"
+	"rawgen/internal/profile"
+	"rawgen/internal/report"
+	"rawgen/internal/verify"
 )
 
 const appVersion = "0.3.0"
@@ -153,6 +153,70 @@ func (a *App) ExportProfiles() (string, error) {
 	return a.store.Export()
 }
 
+// ExportProfilesFile은 세션 목록을 파일로 저장한다(비밀번호는 placeholder).
+// 엔지니어끼리 접속 정보를 주고받는 통로다 — 받는 쪽은 ImportProfilesFile로 읽는다.
+func (a *App) ExportProfilesFile() (string, error) {
+	text, err := a.store.Export()
+	if err != nil {
+		return "", err
+	}
+	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
+		Title:           "세션 내보내기",
+		DefaultFilename: "rawgen-sessions.json",
+		Filters:         []wruntime.FileFilter{{DisplayName: "JSON (*.json)", Pattern: "*.json"}},
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// ImportProfiles는 붙여넣은 JSON에서 세션을 등록한다(이름이 같으면 갱신).
+func (a *App) ImportProfiles(text string) (profile.ImportSummary, error) {
+	return a.store.Import(text)
+}
+
+// ImportProfilesFile은 파일에서 세션을 등록한다.
+func (a *App) ImportProfilesFile() (profile.ImportSummary, error) {
+	path, err := wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{
+		Title:   "세션 JSON 가져오기",
+		Filters: []wruntime.FileFilter{{DisplayName: "JSON (*.json)", Pattern: "*.json"}},
+	})
+	if err != nil || path == "" {
+		return profile.ImportSummary{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return profile.ImportSummary{}, err
+	}
+	return a.store.Import(string(data))
+}
+
+// DuplicateProfile은 선택한 세션을 복제한다.
+func (a *App) DuplicateProfile(id string) (profile.Profile, error) {
+	return a.store.Duplicate(id)
+}
+
+// useProfile은 세션을 읽으면서 "마지막 사용"을 갱신한다. 세션이 여러 개일 때
+// 목록에서 최근에 쓰던 것을 바로 알아보게 하려는 표시다.
+func (a *App) useProfile(id string) (profile.Profile, error) {
+	p, err := a.store.Get(id)
+	if err == nil {
+		a.store.Touch(p.ID)
+	}
+	return p, err
+}
+
+// UseProfile은 "이 세션을 지금 쓰고 있다"를 기록한다(목록의 마지막 사용 표시).
+func (a *App) UseProfile(id string) {
+	if id != "" {
+		a.store.Touch(id)
+	}
+}
+
 type TestResult struct {
 	OK      bool   `json:"ok"`
 	Message string `json:"message"`
@@ -195,7 +259,7 @@ func (a *App) TestCH(profileID string) TestResult {
 }
 
 func (a *App) Discover(profileID string) (*chdb.Discovery, error) {
-	p, err := a.store.Get(profileID)
+	p, err := a.useProfile(profileID)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +356,7 @@ func guardNaN(s model.Scenario, p profile.Profile, dryRun, allowNaN bool) error 
 		return nil
 	}
 	if !p.TestOnly {
-		return fmt.Errorf("NaN 주입은 TestOnly 프로파일에서만 가능합니다")
+		return fmt.Errorf("NaN 주입은 TestOnly 세션에서만 가능합니다")
 	}
 	if !allowNaN {
 		return fmt.Errorf("NaN 주입 확인이 필요합니다 — 시나리오에 NaN 행이 포함되어 있습니다. 주입 화면의 'NaN 주입 확인'을 체크하세요")
@@ -323,7 +387,7 @@ func (a *App) BuildPreview(scenarioJSON string) (*model.Preview, error) {
 // 이벤트: gen:progress(executor.Progress), gen:done(RunResult), gen:error(string)
 // allowNaN은 NaN 주입 전용 확인이다 — 실수로 켜지지 않도록 일반 확인과 분리한다.
 func (a *App) Generate(profileID, scenarioJSON string, dryRun, allowNaN bool) error {
-	p, err := a.store.Get(profileID)
+	p, err := a.useProfile(profileID)
 	if err != nil {
 		return err
 	}
@@ -408,7 +472,7 @@ func (a *App) RunVerify(profileID, scenarioJSON string, skipL2 bool) (*verify.Re
 		return nil, err
 	}
 	defer a.clearBusy()
-	p, err := a.store.Get(profileID)
+	p, err := a.useProfile(profileID)
 	if err != nil {
 		return nil, err
 	}
@@ -636,7 +700,7 @@ func (a *App) E2EPreflight(profileID, scenarioJSON string, skipGenerate, skipDai
 		res.Fatal = append(res.Fatal, "ClickHouse 연결 실패: "+res.CHMsg)
 	}
 	if !skipGenerate && !p.TestOnly {
-		res.Fatal = append(res.Fatal, "TestOnly 프로파일이 아닙니다 — 실제 INSERT가 차단됩니다")
+		res.Fatal = append(res.Fatal, "TestOnly 세션이 아닙니다 — 실제 INSERT가 차단됩니다")
 	}
 	if plan.SkipCells >= plan.TotalCells {
 		res.Fatal = append(res.Fatal, "모든 셀이 보존 창 밖(skip)입니다 — 판정할 것이 없습니다 (과거 날짜 시나리오)")
@@ -650,7 +714,7 @@ func (a *App) E2EPreflight(profileID, scenarioJSON string, skipGenerate, skipDai
 // 진행 상태는 매 판정마다 파일로 영속화되어 크래시 후 재개(Resume)할 수 있고,
 // 결과 리포트는 완료·중단 공통으로 자동 저장된다.
 func (a *App) RunE2E(profileID, scenarioJSON, optionsJSON string) error {
-	p, err := a.store.Get(profileID)
+	p, err := a.useProfile(profileID)
 	if err != nil {
 		return err
 	}

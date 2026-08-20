@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"oqt325/internal/verify"
+	"rawgen/internal/verify"
 )
 
 func gopt() Options { return Options{RetryDelay: 10 * time.Minute, MaxAttempts: 3} }

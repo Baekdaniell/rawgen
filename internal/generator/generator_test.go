@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"oqt325/internal/model"
+	"rawgen/internal/model"
 )
 
 func TestValuesMeetGoal(t *testing.T) {

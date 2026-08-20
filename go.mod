@@ -1,4 +1,4 @@
-module oqt325
+module rawgen
 
 go 1.25.0
 

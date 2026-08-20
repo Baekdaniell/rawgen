@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"oqt325/internal/model"
+	"rawgen/internal/model"
 )
 
 // NaN이 섞인 preview는 반드시 JSON으로 나가야 한다.

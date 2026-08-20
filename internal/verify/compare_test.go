@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"oqt325/internal/mariadb"
-	"oqt325/internal/model"
+	"rawgen/internal/mariadb"
+	"rawgen/internal/model"
 )
 
 func day(t *testing.T, hour int, count int64) model.DayExpected {

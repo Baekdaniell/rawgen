@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"oqt325/internal/chdb"
-	"oqt325/internal/model"
-	"oqt325/internal/planner"
-	"oqt325/internal/profile"
+	"rawgen/internal/chdb"
+	"rawgen/internal/model"
+	"rawgen/internal/planner"
+	"rawgen/internal/profile"
 )
 
 type DayResult struct {
@@ -64,7 +64,7 @@ func Run(ctx context.Context, p profile.Profile, s model.Scenario, dryRun bool, 
 
 	// 안전장치: TestOnly 프로파일에서만 실제 INSERT 허용
 	if !dryRun && !p.TestOnly {
-		return res, fmt.Errorf("프로파일 %q은 TestOnly가 아닙니다. 테스트 DB로 확인된 프로파일에서만 INSERT할 수 있습니다", p.Name)
+		return res, fmt.Errorf("세션 %q은 TestOnly가 아닙니다. 테스트 DB로 확인된 세션에서만 INSERT할 수 있습니다", p.Name)
 	}
 
 	// 보존 창 밖 날짜는 실행 차단 (preview는 경고, 실행은 차단)

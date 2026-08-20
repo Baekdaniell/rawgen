@@ -6,8 +6,8 @@ import (
 	"math"
 	"time"
 
-	"oqt325/internal/generator"
-	"oqt325/internal/model"
+	"rawgen/internal/generator"
+	"rawgen/internal/model"
 )
 
 const sampleLimit = 12

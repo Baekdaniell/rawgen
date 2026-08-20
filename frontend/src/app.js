@@ -10,6 +10,9 @@ const SCENARIO_STORE_KEY_LEGACY = "sg.lastScenario"; // 개명 전 키 (읽기 �
 const state = {
   profiles: [],
   profileId: "",
+  // 세션별 마지막 연결 확인 결과 { [id]: {maria: bool|null, ch: bool|null} }.
+  // 세션이 여러 개면 "어느 것이 지금 살아 있는 서버인지"를 목록에서 바로 봐야 한다.
+  connCheck: {},
   checkpoints: [],
   selectedCps: new Set(),
   scenarioName: "gui",
@@ -36,7 +39,7 @@ const e2eState = {
 };
 
 const sectionMeta = {
-  connections: ["연결", "DB 연결 프로파일을 만들고 테스트합니다."],
+  connections: ["연결", "접속 세션을 등록하고 테스트합니다."],
   targets: ["대상 선택", "데이터를 주입할 checkpoint를 고릅니다."],
   scenario: ["시나리오", "날짜, 주기, 목표 통계값을 입력합니다."],
   preview: ["미리보기", "생성될 데이터와 기대 통계를 확인합니다 (DB 미접근)."],
@@ -243,6 +246,8 @@ function fillForm(p) {
   $("pfTblCheckpoint").value = p?.checkpointTable || "";
   $("pfTblExcludeDate").value = p?.excludeDateTable || "";
   renderSideProfile();
+  const sel = $("sideSessionSelect");
+  if (sel) sel.value = state.profileId || "";
 }
 
 function currentProfile() {
@@ -260,14 +265,57 @@ function renderSideProfile() {
 
 async function loadProfiles(selectId) {
   state.profiles = (await api().ListProfiles()) || [];
-  const sel = $("profileSelect");
-  sel.innerHTML = state.profiles
-    .map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`)
-    .join("");
-  if (selectId) sel.value = selectId;
-  const chosen = state.profiles.find((p) => p.id === sel.value);
+  const wanted = selectId || state.profileId;
+  const chosen = state.profiles.find((p) => p.id === wanted) || state.profiles[0];
   if (chosen) fillForm(chosen);
-  else renderSideProfile();
+  else fillForm(null);
+  renderSessionList();
+}
+
+function connBadge(id, key) {
+  const v = state.connCheck[id]?.[key];
+  if (v === true) return '<span class="pass">OK</span>';
+  if (v === false) return '<span class="fail">실패</span>';
+  return '<span class="hint">미확인</span>';
+}
+
+function shortTime(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// renderSessionList는 등록된 세션을 표로 그린다. 선택 행이 곧 "지금 작업 대상"이고,
+// 주입/검증/E2E가 전부 이 선택을 따라가므로 어느 행이 선택됐는지 눈에 띄어야 한다.
+function renderSessionList() {
+  const rows = state.profiles
+    .map((p) => {
+      const active = p.id === state.profileId;
+      return `<tr class="session-row${active ? " active" : ""}" data-id="${esc(p.id)}">
+        <td>${active ? "● " : ""}${esc(p.name)}</td>
+        <td>${esc(p.clickhouse?.host || "-")}:${p.clickhouse?.port || "-"} ${connBadge(p.id, "ch")}</td>
+        <td>${esc(p.mariadb?.host || "-")}:${p.mariadb?.port || "-"} ${connBadge(p.id, "maria")}</td>
+        <td>${p.testOnly ? '<span class="pass">허용</span>' : '<span class="hint">차단</span>'}</td>
+        <td>${esc(shortTime(p.lastUsedAt))}</td>
+      </tr>`;
+    })
+    .join("");
+  $("sessionRows").innerHTML =
+    rows || '<tr><td colspan="5" class="hint">등록된 세션이 없습니다 — "새 세션"으로 추가하세요.</td></tr>';
+  document.querySelectorAll("#sessionRows .session-row").forEach((tr) =>
+    tr.addEventListener("click", () => {
+      const p = state.profiles.find((x) => x.id === tr.dataset.id);
+      if (p) {
+        fillForm(p);
+        renderSessionList();
+      }
+    }),
+  );
+  const sel = $("sideSessionSelect");
+  sel.innerHTML = state.profiles.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  sel.value = state.profileId || "";
 }
 
 // ---------- Targets ----------
@@ -460,7 +508,7 @@ function renderPreview(pv) {
   const p = currentProfile();
   const s = pv.scenario;
   $("genSummary").textContent = [
-    `프로파일: ${p ? p.name : "(미선택)"}  TestOnly=${p ? p.testOnly : "-"}`,
+    `세션: ${p ? p.name : "(미선택)"}  TestOnly=${p ? p.testOnly : "-"}`,
     `ClickHouse: ${p?.clickhouse?.host || "?"}:${p?.clickhouse?.port || "?"} / ${p?.clickhouse?.database || "?"} → ${p?.checkvalueTable || "checkvalue"}`,
     `날짜: ${s.startDate} .. ${s.endDate} (${s.timezone})`,
     `checkpoint ${s.checkpointIds.length}개: ${s.checkpointIds.join(", ")}`,
@@ -545,7 +593,7 @@ function setProgress(done, total) {
 async function startRun(dryRun) {
   if (!state.preview) throw new Error("Preview를 먼저 실행하세요.");
   const p = currentProfile();
-  if (!p) throw new Error("프로파일을 선택하세요.");
+  if (!p) throw new Error("세션을 선택하세요.");
   // 마지막 방어선: 확인한 시나리오와 실제로 보낼 시나리오가 같은지 대조한다.
   if (JSON.stringify(state.preview.scenario) !== JSON.stringify(buildScenario())) {
     invalidatePreview();
@@ -591,20 +639,35 @@ async function loadHistory() {
 
 // ---------- Verify ----------
 
+// 층 판정은 PASS / FAIL / 미검증 3값이다. 백엔드(verify.LayerResult.Verdict)와 같은 규칙이며,
+// 특히 "대조 0건 + 불일치 0"을 PASS로 그리지 않는 것이 핵심이다 — 다음 날 아침 검증에서
+// hourly가 통째로 보존 창 밖이면 아무것도 안 본 실행이 초록색으로 남는다.
+function layerVerdict(lr) {
+  if (!lr.ran) return '<span class="hint">생략</span>';
+  if (lr.errored) return '<span class="skip">ERROR(대조 불가)</span>';
+  if ((lr.mismatches?.length || 0) > 0) return '<span class="fail">FAIL</span>';
+  if (!lr.checked) return '<span class="skip">미검증</span>';
+  if (!lr.pass) return '<span class="fail">FAIL</span>';
+  return '<span class="pass">PASS</span>';
+}
+
 function renderVerify(res) {
   const layers = [res.l1Raw, res.l1Mv, res.l2Daily, res.l2Hourly];
   $("verifyLayers").innerHTML = layers
     .map((lr) => {
-      const status = !lr.ran ? "-" : lr.pass ? '<span class="pass">PASS</span>' : '<span class="fail">FAIL</span>';
-      return `<tr><td>${esc(lr.name)}</td><td>${lr.ran ? "예" : "생략"}</td><td>${status}</td>
-        <td>${lr.checked}</td><td>${lr.mismatches?.length || 0}</td><td>${esc(lr.note || "")}</td></tr>`;
+      return `<tr><td>${esc(lr.name)}</td><td>${lr.ran ? "예" : "생략"}</td><td>${layerVerdict(lr)}</td>
+        <td>${lr.checked}</td><td>${lr.skipped || 0}</td><td>${lr.mismatches?.length || 0}</td><td>${esc(lr.note || "")}</td></tr>`;
     })
     .join("");
   const banner = [];
   banner.push(`복제 지연 가드: ${res.guardPassed ? "통과" : "차단"} (delay ${res.replicationDelay}초)`);
   if (res.excludeDates?.length) banner.push(`exclude_date 등재: ${res.excludeDates.join(", ")}`);
   for (const w of res.warnings || []) banner.push(`주의: ${w}`);
-  banner.push(`전체 판정: ${res.pass ? "PASS" : "FAIL"}`);
+  const anyFail = layers.some((lr) => lr.ran && !lr.errored && (lr.mismatches?.length || 0) > 0);
+  const overall = res.pass ? "PASS" : res.inconclusive && !anyFail ? "미검증 — 대조하지 못한 층이 있습니다" : "FAIL";
+  banner.push(`전체 판정: ${overall}`);
+  const skipped = layers.reduce((n, lr) => n + (lr.skipped || 0), 0);
+  if (skipped) banner.push(`보존 창 밖이라 대조에서 제외: ${skipped}개 시간대(정상 부재 — 통과가 아니라 미검증)`);
   $("verifyBanner").textContent = banner.join("  |  ");
 
   const all = layers.flatMap((lr) => lr.mismatches || []);
@@ -617,6 +680,11 @@ function renderVerify(res) {
         )
         .join("")
     : '<tr><td colspan="8" class="hint">불일치 없음</td></tr>';
+  // "불일치 없음"만 보고 통과로 읽지 않게, 대조를 한 건도 못 한 경우를 같은 자리에 적어 준다.
+  if (!all.length && res.inconclusive) {
+    $("mismatchRows").innerHTML =
+      '<tr><td colspan="8" class="hint">대조를 수행하지 못한 층이 있습니다 — 위 표의 "미검증" 행과 비고를 보세요.</td></tr>';
+  }
   state.verifyDone = true;
   updateStepStates();
 }
@@ -711,7 +779,7 @@ function renderPreflight(pf) {
   const parts = [];
   parts.push(row(pf.mariaOk, "MariaDB", pf.mariaOk ? "연결 OK — " + pf.mariaMsg : pf.mariaMsg));
   parts.push(row(pf.chOk, "ClickHouse", pf.chOk ? "연결 OK — " + pf.chMsg : pf.chMsg));
-  parts.push(row(pf.testOnly, "TestOnly", pf.testOnly ? "INSERT 허용" : "INSERT 차단 프로파일"));
+  parts.push(row(pf.testOnly, "TestOnly", pf.testOnly ? "INSERT 허용" : "INSERT 차단 세션"));
   parts.push(row(pf.today, "오늘 날짜", pf.today ? "시나리오에 포함" : "미포함 — E2E는 오늘 날짜 전용"));
   if (pf.plan) {
     const est = pf.plan.lastDue ? new Date(pf.plan.lastDue) : null;
@@ -785,7 +853,7 @@ async function checkPendingE2E() {
   // L1이 불합격하고, 그 중단이 저장된 판정분을 위협한다.
   const target = st.target ? ` · 대상 ${esc(st.target)}` : "";
   const noCells = !!st.noCells;
-  banner.innerHTML = `<span>미완료 E2E 저장 상태가 있습니다 — 시작 ${esc(st.startedAt || "?")} · 셀 ${st.doneCells}/${st.totalCells} 판정 완료${st.aborted ? " · 중단: " + esc(st.aborted) : ""}${st.profile ? " · 프로파일 " + esc(st.profile) : ""}${target}${
+  banner.innerHTML = `<span>미완료 E2E 저장 상태가 있습니다 — 시작 ${esc(st.startedAt || "?")} · 셀 ${st.doneCells}/${st.totalCells} 판정 완료${st.aborted ? " · 중단: " + esc(st.aborted) : ""}${st.profile ? " · 세션 " + esc(st.profile) : ""}${target}${
     noCells ? " <b>· 셀 계획 이전에 중단되어 재개할 수 없습니다 (처음부터 실행하세요)</b>" : ""
   }</span>
     <span class="resume-actions">
@@ -815,7 +883,7 @@ async function checkPendingE2E() {
 
 async function startE2E(resume = false) {
   const p = currentProfile();
-  if (!p) throw new Error("프로파일을 선택하세요.");
+  if (!p) throw new Error("세션을 선택하세요.");
   const scenarioJSON = JSON.stringify(buildScenario());
   const skipGen = resume || $("e2eSkipGen").checked;
 
@@ -870,7 +938,10 @@ async function buildReport() {
 document.querySelectorAll(".step").forEach((b) => b.addEventListener("click", () => setSection(b.dataset.section)));
 $("errorClose").addEventListener("click", clearError);
 
-$("newProfile").addEventListener("click", () => fillForm(null));
+$("newProfile").addEventListener("click", () => {
+  fillForm(null);
+  renderSessionList();
+});
 bindBusy("saveProfile", async () => {
   const saved = await api().SaveProfile(profileFromForm());
   await loadProfiles(saved.id);
@@ -883,26 +954,63 @@ $("deleteProfile").addEventListener(
     await loadProfiles();
   }),
 );
-$("profileSelect").addEventListener("change", () => {
-  const p = state.profiles.find((x) => x.id === $("profileSelect").value);
-  if (p) fillForm(p);
+$("sideSessionSelect").addEventListener("change", () => {
+  const p = state.profiles.find((x) => x.id === $("sideSessionSelect").value);
+  if (p) {
+    fillForm(p);
+    renderSessionList();
+  }
 });
+bindBusy("dupProfile", async () => {
+  if (!state.profileId) throw new Error("복제할 세션을 먼저 고르세요");
+  const copy = await api().DuplicateProfile(state.profileId);
+  await loadProfiles(copy.id);
+}, "복제 중...");
+function showImportSummary(sum) {
+  const parts = [];
+  if (sum.added?.length) parts.push(`추가 ${sum.added.length}건: ${sum.added.join(", ")}`);
+  if (sum.updated?.length) parts.push(`갱신 ${sum.updated.length}건: ${sum.updated.join(", ")}`);
+  for (const w of sum.warnings || []) parts.push("주의: " + w);
+  $("importResult").textContent = parts.length ? parts.join(" | ") : "가져온 세션이 없습니다.";
+}
+bindBusy("importProfilesFile", async () => {
+  const sum = await api().ImportProfilesFile();
+  showImportSummary(sum);
+  await loadProfiles();
+}, "가져오는 중...");
+bindBusy("importProfilesPaste", async () => {
+  const sum = await api().ImportProfiles($("importProfilesText").value);
+  showImportSummary(sum);
+  $("importProfilesText").value = "";
+  await loadProfiles();
+}, "가져오는 중...");
+bindBusy("exportProfilesFile", async (btn) => {
+  const path = await api().ExportProfilesFile();
+  if (path) flashButton(btn, "저장됨");
+  $("importResult").textContent = path ? `저장: ${path} (비밀번호는 자리표시자)` : "저장을 취소했습니다.";
+}, "저장 중...");
 bindBusy("exportProfiles", async (btn) => {
   const text = await api().ExportProfiles();
   await navigator.clipboard.writeText(text);
   $("discoverOut").textContent = "클립보드에 복사됨 (비밀번호는 placeholder 치환):\n\n" + text;
   flashButton(btn, "복사됨");
 });
+function recordConn(id, key, ok) {
+  state.connCheck[id] = { ...(state.connCheck[id] || {}), [key]: ok };
+  renderSessionList();
+}
 bindBusy("testMaria", async () => {
   const saved = await api().SaveProfile(profileFromForm());
   await loadProfiles(saved.id);
   const r = await api().TestMaria(saved.id);
+  recordConn(saved.id, "maria", !!r.ok);
   $("discoverOut").textContent = (r.ok ? "OK: " : "실패: ") + r.message;
 }, "연결 확인 중...");
 bindBusy("testCh", async () => {
   const saved = await api().SaveProfile(profileFromForm());
   await loadProfiles(saved.id);
   const r = await api().TestCH(saved.id);
+  recordConn(saved.id, "ch", !!r.ok);
   $("discoverOut").textContent = (r.ok ? "OK: " : "실패: ") + r.message;
 }, "연결 확인 중...");
 bindBusy("discover", async () => {

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"oqt325/internal/model"
-	"oqt325/internal/verify"
+	"rawgen/internal/model"
+	"rawgen/internal/verify"
 )
 
 func mustLoc(t *testing.T) *time.Location {

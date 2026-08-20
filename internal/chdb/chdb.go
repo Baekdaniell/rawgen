@@ -12,8 +12,8 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
-	"oqt325/internal/model"
-	"oqt325/internal/profile"
+	"rawgen/internal/model"
+	"rawgen/internal/profile"
 )
 
 var identRe = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
@@ -125,7 +125,7 @@ func (c *Client) Discover(ctx context.Context) (*Discovery, error) {
 		}
 		for name, ok := range mvNeed {
 			if !ok {
-				d.Problems = append(d.Problems, fmt.Sprintf("%s(MV)에 %s 컬럼이 없습니다 — 프로파일 테이블명 확인 필요", mv, name))
+				d.Problems = append(d.Problems, fmt.Sprintf("%s(MV)에 %s 컬럼이 없습니다 — 세션의 테이블명 오버라이드 확인 필요", mv, name))
 			}
 		}
 	}

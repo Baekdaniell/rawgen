@@ -13,7 +13,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 
-	"oqt325/internal/profile"
+	"rawgen/internal/profile"
 )
 
 var identRe = regexp.MustCompile(`^[A-Za-z0-9_]+$`)

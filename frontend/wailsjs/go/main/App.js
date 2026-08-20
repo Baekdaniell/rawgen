@@ -34,6 +34,10 @@ export function Discover(arg1) {
   return window['go']['main']['App']['Discover'](arg1);
 }
 
+export function DuplicateProfile(arg1) {
+  return window['go']['main']['App']['DuplicateProfile'](arg1);
+}
+
 export function E2EPreflight(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['E2EPreflight'](arg1, arg2, arg3, arg4);
 }
@@ -46,12 +50,24 @@ export function ExportProfiles() {
   return window['go']['main']['App']['ExportProfiles']();
 }
 
+export function ExportProfilesFile() {
+  return window['go']['main']['App']['ExportProfilesFile']();
+}
+
 export function Generate(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['Generate'](arg1, arg2, arg3, arg4);
 }
 
 export function History(arg1) {
   return window['go']['main']['App']['History'](arg1);
+}
+
+export function ImportProfiles(arg1) {
+  return window['go']['main']['App']['ImportProfiles'](arg1);
+}
+
+export function ImportProfilesFile() {
+  return window['go']['main']['App']['ImportProfilesFile']();
 }
 
 export function Info() {
@@ -104,4 +120,8 @@ export function TestCH(arg1) {
 
 export function TestMaria(arg1) {
   return window['go']['main']['App']['TestMaria'](arg1);
+}
+
+export function UseProfile(arg1) {
+  return window['go']['main']['App']['UseProfile'](arg1);
 }

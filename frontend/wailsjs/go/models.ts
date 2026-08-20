@@ -671,6 +671,22 @@ export namespace profile {
 	        this.password = source["password"];
 	    }
 	}
+	export class ImportSummary {
+	    added: string[];
+	    updated: string[];
+	    warnings: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ImportSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.added = source["added"];
+	        this.updated = source["updated"];
+	        this.warnings = source["warnings"];
+	    }
+	}
 	export class MariaDB {
 	    host: string;
 	    port: number;
@@ -704,6 +720,9 @@ export namespace profile {
 	    hourlyTable: string;
 	    checkpointTable: string;
 	    excludeDateTable: string;
+	    createdAt?: string;
+	    updatedAt?: string;
+	    lastUsedAt?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Profile(source);
@@ -723,6 +742,9 @@ export namespace profile {
 	        this.hourlyTable = source["hourlyTable"];
 	        this.checkpointTable = source["checkpointTable"];
 	        this.excludeDateTable = source["excludeDateTable"];
+	        this.createdAt = source["createdAt"];
+	        this.updatedAt = source["updatedAt"];
+	        this.lastUsedAt = source["lastUsedAt"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -783,6 +805,7 @@ export namespace verify {
 	    errored?: boolean;
 	    err?: string;
 	    checked: number;
+	    skipped: number;
 	    mismatches: Mismatch[];
 	    note?: string;
 	
@@ -798,6 +821,7 @@ export namespace verify {
 	        this.errored = source["errored"];
 	        this.err = source["err"];
 	        this.checked = source["checked"];
+	        this.skipped = source["skipped"];
 	        this.mismatches = this.convertValues(source["mismatches"], Mismatch);
 	        this.note = source["note"];
 	    }
@@ -862,6 +886,7 @@ export namespace verify {
 	    warnings: string[];
 	    pathDiffs?: PathDiff[];
 	    pass: boolean;
+	    inconclusive: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Result(source);
@@ -879,6 +904,7 @@ export namespace verify {
 	        this.warnings = source["warnings"];
 	        this.pathDiffs = this.convertValues(source["pathDiffs"], PathDiff);
 	        this.pass = source["pass"];
+	        this.inconclusive = source["inconclusive"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

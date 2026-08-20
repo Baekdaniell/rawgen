@@ -30,7 +30,8 @@
         </nav>
 
         <section class="side-panel">
-          <h2>현재 프로파일</h2>
+          <h2>현재 세션</h2>
+          <select id="sideSessionSelect" class="side-select" title="접속 세션 전환"></select>
           <p id="sideProfile" class="hint">선택 안 됨</p>
           <p id="sideTestOnly" class="hint"></p>
           <p id="sideBusy" class="hint"></p>
@@ -41,7 +42,7 @@
         <header class="topbar">
           <div>
             <h2 id="sectionTitle">연결</h2>
-            <p id="sectionSubtitle">DB 연결 프로파일을 만들고 테스트합니다.</p>
+            <p id="sectionSubtitle">접속 세션을 등록하고 테스트합니다.</p>
           </div>
         </header>
 
@@ -55,23 +56,53 @@
           <div class="grid two">
             <article class="panel">
               <div class="panel-header">
-                <h3>프로파일</h3>
+                <h3>접속 세션</h3>
                 <div>
-                  <button id="newProfile" class="secondary small">새로 만들기</button>
-                  <button id="exportProfiles" class="secondary small">내보내기(비밀번호 제외)</button>
+                  <button id="newProfile" class="secondary small">새 세션</button>
+                  <button id="dupProfile" class="secondary small">복제</button>
                 </div>
               </div>
-              <label>
-                저장된 프로파일
-                <select id="profileSelect"></select>
-              </label>
+              <p class="hint">
+                검증 대상 환경마다 세션을 하나씩 등록해 두고 골라 씁니다. 목록에서 클릭하면 그 세션으로 전환됩니다
+                (주입·검증·E2E는 항상 <strong>선택된 세션</strong>에 실행됩니다).
+              </p>
+              <div class="table-wrap session-list">
+                <table>
+                  <thead>
+                    <tr><th>세션</th><th>ClickHouse</th><th>MariaDB</th><th>INSERT</th><th>마지막 사용</th></tr>
+                  </thead>
+                  <tbody id="sessionRows">
+                    <tr><td colspan="5" class="hint">등록된 세션이 없습니다 — "새 세션"으로 추가하세요.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <details class="advanced">
+                <summary>세션 주고받기 (JSON)</summary>
+                <p class="hint">
+                  내보내기는 비밀번호를 <code>&lt;MARIADB_PASSWORD&gt;</code>처럼 자리표시자로 바꿉니다.
+                  가져오면 <strong>이름이 같은 세션은 갱신</strong>되고, 비밀번호와 TestOnly는 넘어오지 않으니
+                  받는 쪽에서 직접 입력·확인해야 합니다.
+                </p>
+                <div class="top-actions">
+                  <button id="importProfilesFile" class="secondary small">파일에서 가져오기</button>
+                  <button id="exportProfilesFile" class="secondary small">파일로 내보내기</button>
+                  <button id="exportProfiles" class="secondary small">클립보드로 내보내기</button>
+                </div>
+                <label>
+                  붙여넣어 가져오기
+                  <textarea id="importProfilesText" rows="4" placeholder='[{"name":"qa-koscom", ...}]'></textarea>
+                </label>
+                <button id="importProfilesPaste" class="secondary small">붙여넣은 JSON 가져오기</button>
+                <p id="importResult" class="hint"></p>
+              </details>
+              <h3 style="margin-top: 18px">세션 설정</h3>
               <label>
                 이름
                 <input id="pfName" type="text" placeholder="qa-koscom" />
               </label>
               <label class="toggle">
                 <input id="pfTestOnly" type="checkbox" />
-                <span>TestOnly (테스트 DB 확인됨 — 이 프로파일에서만 INSERT 허용)</span>
+                <span>TestOnly (테스트 DB 확인됨 — 이 세션에서만 INSERT 허용)</span>
               </label>
               <label>
                 timezone
@@ -135,7 +166,7 @@
               <button id="discover" class="secondary small">스키마 확인</button>
             </div>
             <p class="hint">checkvalue/MV 컬럼, Replicated 여부, exclude_date 등재, 복제 지연을 확인합니다.</p>
-            <pre id="discoverOut" class="codebox">프로파일 저장 후 실행하세요.</pre>
+            <pre id="discoverOut" class="codebox">세션 저장 후 실행하세요.</pre>
           </article>
         </section>
 
@@ -154,7 +185,7 @@
                 <thead>
                   <tr><th style="width:60px">선택</th><th>id</th><th>이름</th><th>driver</th><th>enabled</th></tr>
                 </thead>
-                <tbody id="cpRows"><tr><td colspan="5" class="hint">프로파일 연결 후 조회하세요.</td></tr></tbody>
+                <tbody id="cpRows"><tr><td colspan="5" class="hint">세션을 고르고 조회하세요.</td></tr></tbody>
               </table>
             </div>
           </article>
@@ -204,6 +235,11 @@
                 <label>batch size <input id="batchSize" type="number" value="100000" /></label>
               </div>
               <p class="hint">보존 창: 오늘 기준 13일 이내 날짜만 실환경 검증이 가능합니다 (checkvalue 파티션·daily_stats TTL = 14일). Ctrl+Enter로 바로 Preview를 실행합니다.</p>
+              <p class="hint">
+                <strong>아직 오지 않은 시각의 행을 만드는 것은 정상 사용법입니다.</strong>
+                예를 들어 17시에 오늘 23시 행을 미리 주입해 두면, 제품이 익일 00:05에 그 시간대를 집계하고
+                다음 날 아침에 검증할 수 있습니다 (23시 셀·일별 값이 이 방식으로만 확인됩니다).
+              </p>
             </article>
 
             <article class="panel">
@@ -304,7 +340,7 @@
             <div id="genNaNBox" class="warning-box" style="display: none">
               <b>이 시나리오는 NaN 행을 주입합니다.</b>
               NaN이 섞인 (날짜 × cp)는 MV 경로와 checkvalue 폴백 경로의 통계가 서로 달라지므로,
-              이후 다른 검증의 클린 기준으로 쓸 수 없습니다. TestOnly 프로파일에서만 가능합니다.
+              이후 다른 검증의 클린 기준으로 쓸 수 없습니다. TestOnly 세션에서만 가능합니다.
               <label class="toggle">
                 <input id="genNaNConfirm" type="checkbox" />
                 <span id="genNaNText">NaN 주입을 확인했습니다</span>
@@ -320,7 +356,7 @@
               <button id="runInsert" class="danger" disabled>실제 INSERT 실행</button>
               <button id="cancelRun" class="secondary" disabled>취소</button>
             </div>
-            <p class="hint">INSERT는 TestOnly 프로파일에서만 가능하며, 직후 readback(건수 대조 + 중복 카나리)이 자동 수행됩니다. 취소는 batch 경계에서 반영됩니다.</p>
+            <p class="hint">INSERT는 TestOnly 세션에서만 가능하며, 직후 readback(건수 대조 + 중복 카나리)이 자동 수행됩니다. 취소는 batch 경계에서 반영됩니다.</p>
           </article>
 
           <article class="panel">
@@ -372,6 +408,13 @@
               L2 = 재생성 후 (expected ↔ MariaDB daily·hourly).
               실행 전 복제 지연 가드(60초)가 자동 적용됩니다.
             </p>
+            <p class="hint">
+              <strong>오늘 주입하고 내일 아침에 검증하는 흐름이 정상 경로입니다.</strong>
+              앱을 껐다 켜도 시나리오는 그대로 복원되므로, 다음 날 이 화면에서 "L1 + L2 전체 검증"만 누르면 됩니다.
+              이때 00~22시 시간대는 보존 창(당일 + 전일 23시)을 벗어나 조회 자체가 불가능하므로
+              <span class="skip">미검증</span>으로 표시됩니다. 23시 셀과 일별 값은 익일 00:05에 만들어져
+              그날 하루 종일(일별은 영구) 조회됩니다.
+            </p>
             <div class="top-actions">
               <button id="verifyL1" class="secondary">L1만 검증 (재생성 전)</button>
               <button id="verifyAll" class="primary">L1 + L2 전체 검증</button>
@@ -383,9 +426,9 @@
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>layer</th><th>실행</th><th>판정</th><th>검사 항목</th><th>불일치</th><th>비고</th></tr>
+                  <tr><th>layer</th><th>실행</th><th>판정</th><th>검사 항목</th><th>미검증(창 밖)</th><th>불일치</th><th>비고</th></tr>
                 </thead>
-                <tbody id="verifyLayers"><tr><td colspan="6" class="hint">검증을 실행하면 결과가 표시됩니다.</td></tr></tbody>
+                <tbody id="verifyLayers"><tr><td colspan="7" class="hint">검증을 실행하면 결과가 표시됩니다.</td></tr></tbody>
               </table>
             </div>
             <div id="verifyBanner" class="hint" style="margin-top: 10px"></div>
@@ -418,6 +461,12 @@
               자동 verify 반복 → 최종 리포트를 한 번에 수행합니다. 오늘 날짜 시나리오 전용이며,
               진행 상태는 매 판정마다 저장되어 앱을 껐다 켜도 이어서 할 수 있고, 리포트는
               완료·중단 시 자동 저장됩니다. 실행 중에는 시스템 절전이 자동으로 방지됩니다.
+            </p>
+            <p class="hint">
+              <strong>PC를 자정 전에 끄는 날에는 이 모드를 쓰지 마세요.</strong> 23시 셀과 일별 값은 익일 00:05에
+              만들어지므로 자동 모드는 자정을 넘겨야 완주합니다. 퇴근 전에 끝내야 하면
+              <strong>5. 주입까지만 하고 앱을 종료한 뒤, 다음 날 아침 7. 검증에서 한 번만 대조</strong>하면 됩니다
+              (23시 셀은 다음 날 하루 종일, 일별 값은 계속 조회됩니다. 00~22시 셀은 그때 "미검증"으로 표시되는 것이 정상입니다).
             </p>
             <label class="toggle">
               <input id="e2eSkipGen" type="checkbox" />

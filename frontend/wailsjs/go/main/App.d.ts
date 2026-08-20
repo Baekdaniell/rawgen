@@ -3,8 +3,8 @@
 import {model} from '../models';
 import {main} from '../models';
 import {chdb} from '../models';
-import {executor} from '../models';
 import {profile} from '../models';
+import {executor} from '../models';
 import {verify} from '../models';
 
 export function BuildPreview(arg1:string):Promise<model.Preview>;
@@ -23,15 +23,23 @@ export function DiscardE2EState():Promise<void>;
 
 export function Discover(arg1:string):Promise<chdb.Discovery>;
 
+export function DuplicateProfile(arg1:string):Promise<profile.Profile>;
+
 export function E2EPreflight(arg1:string,arg2:string,arg3:boolean,arg4:boolean):Promise<main.PreflightResult>;
 
 export function E2EReport():Promise<string>;
 
 export function ExportProfiles():Promise<string>;
 
+export function ExportProfilesFile():Promise<string>;
+
 export function Generate(arg1:string,arg2:string,arg3:boolean,arg4:boolean):Promise<void>;
 
 export function History(arg1:number):Promise<Array<executor.RunResult>>;
+
+export function ImportProfiles(arg1:string):Promise<profile.ImportSummary>;
+
+export function ImportProfilesFile():Promise<profile.ImportSummary>;
 
 export function Info():Promise<main.AppInfo>;
 
@@ -58,3 +66,5 @@ export function SaveReportFile(arg1:string,arg2:string):Promise<string>;
 export function TestCH(arg1:string):Promise<main.TestResult>;
 
 export function TestMaria(arg1:string):Promise<main.TestResult>;
+
+export function UseProfile(arg1:string):Promise<void>;

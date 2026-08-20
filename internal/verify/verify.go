@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"oqt325/internal/chdb"
-	"oqt325/internal/generator"
-	"oqt325/internal/mariadb"
-	"oqt325/internal/model"
-	"oqt325/internal/planner"
-	"oqt325/internal/profile"
+	"rawgen/internal/chdb"
+	"rawgen/internal/generator"
+	"rawgen/internal/mariadb"
+	"rawgen/internal/model"
+	"rawgen/internal/planner"
+	"rawgen/internal/profile"
 )
 
 const chTolerance = 1e-9 // expected(Go float64) ↔ CH 집계 순서 차이 흡수
@@ -104,14 +104,49 @@ type Mismatch struct {
 // 이 층의 "불일치 0"을 통과로 읽으면 안 된다는 신호다(미검증 ≠ 통과).
 // E2E 러너는 이 값이 true인 회차에는 어떤 셀도 확정하지 않는다.
 type LayerResult struct {
-	Name       string     `json:"name"`
-	Ran        bool       `json:"ran"`
-	Pass       bool       `json:"pass"`
-	Errored    bool       `json:"errored,omitempty"`
-	Err        string     `json:"err,omitempty"`
-	Checked    int        `json:"checked"`
+	Name    string `json:"name"`
+	Ran     bool   `json:"ran"`
+	Pass    bool   `json:"pass"`
+	Errored bool   `json:"errored,omitempty"`
+	Err     string `json:"err,omitempty"`
+	Checked int    `json:"checked"`
+	// Skipped는 보존 창 밖이라 대조 자체를 하지 않은 항목 수다. 이 값이 있는데
+	// 불일치가 0이면 "통과"가 아니라 "그만큼 안 봤다"는 뜻이다.
+	Skipped    int        `json:"skipped"`
 	Mismatches []Mismatch `json:"mismatches"`
 	Note       string     `json:"note,omitempty"`
+}
+
+// 층 판정은 3값이다. "불일치 0"이 통과와 미검증 두 가지를 모두 뜻할 수 있어서,
+// 화면·리포트가 그 둘을 절대 같은 글자로 못 쓰게 여기서 한 번에 정한다.
+const (
+	VerdictNotRun       = "-"
+	VerdictPass         = "PASS"
+	VerdictFail         = "FAIL"
+	VerdictError        = "ERROR"
+	VerdictInconclusive = "INCONCLUSIVE"
+)
+
+// Verdict는 층 판정을 돌려준다.
+//   - 조회 실패(Errored) = ERROR(대조 불가)
+//   - 불일치 있음 = FAIL
+//   - 대조 0건(전부 보존 창 밖이거나 볼 것이 없었음) = INCONCLUSIVE(미검증)
+//   - 그 외 = PASS
+func (lr LayerResult) Verdict() string {
+	switch {
+	case !lr.Ran:
+		return VerdictNotRun
+	case lr.Errored:
+		return VerdictError
+	case len(lr.Mismatches) > 0:
+		return VerdictFail
+	case lr.Checked == 0:
+		return VerdictInconclusive
+	case !lr.Pass:
+		return VerdictFail
+	default:
+		return VerdictPass
+	}
 }
 
 // fail은 조회 실패를 층 결과에 기록한다. Note만 남기고 Pass를 true로 두면
@@ -131,34 +166,37 @@ func (lr *LayerResult) fail(note string, err error) {
 // NaN이 섞인 시간대는 MV 경로(필터 없음)와 checkvalue 폴백 경로(isFinite)가
 // 서로 다른 통계를 만드는 것이 정상이므로, 결함으로 세지 않고 나란히 기록한다.
 type PathDiff struct {
-	CP       int64  `json:"cp"`
-	Date     string `json:"date"`
-	Hour     int    `json:"hour"`
-	Field    string `json:"field"`
-	NaNRows  int64  `json:"nanRows"`
-	Finite   string `json:"finite"`   // finite 기준 기대(폴백 경로)
-	All      string `json:"all"`      // 전체 기준 기대(MV 경로)
-	Actual   string `json:"actual"`   // 실측
-	Matched  string `json:"matched"`  // finite | all | none
-	Layer    string `json:"layer"`
+	CP      int64  `json:"cp"`
+	Date    string `json:"date"`
+	Hour    int    `json:"hour"`
+	Field   string `json:"field"`
+	NaNRows int64  `json:"nanRows"`
+	Finite  string `json:"finite"`  // finite 기준 기대(폴백 경로)
+	All     string `json:"all"`     // 전체 기준 기대(MV 경로)
+	Actual  string `json:"actual"`  // 실측
+	Matched string `json:"matched"` // finite | all | none
+	Layer   string `json:"layer"`
 }
 
 type Result struct {
-	ReplicationDelay uint64        `json:"replicationDelay"`
-	GuardPassed      bool          `json:"guardPassed"`
-	ExcludeDates     []string      `json:"excludeDates"`
-	L1Raw            LayerResult   `json:"l1Raw"`
-	L1MV             LayerResult   `json:"l1Mv"`
-	L2Daily          LayerResult   `json:"l2Daily"`
-	L2Hourly         LayerResult   `json:"l2Hourly"`
-	Warnings         []string      `json:"warnings"`
-	PathDiffs        []PathDiff    `json:"pathDiffs,omitempty"`
-	Pass             bool          `json:"pass"`
+	ReplicationDelay uint64      `json:"replicationDelay"`
+	GuardPassed      bool        `json:"guardPassed"`
+	ExcludeDates     []string    `json:"excludeDates"`
+	L1Raw            LayerResult `json:"l1Raw"`
+	L1MV             LayerResult `json:"l1Mv"`
+	L2Daily          LayerResult `json:"l2Daily"`
+	L2Hourly         LayerResult `json:"l2Hourly"`
+	Warnings         []string    `json:"warnings"`
+	PathDiffs        []PathDiff  `json:"pathDiffs,omitempty"`
+	Pass             bool        `json:"pass"`
+	// Inconclusive는 "틀린 게 아니라 못 봤다"는 뜻이다. Pass=false를 FAIL로만
+	// 읽으면 미검증 실행이 결함으로 보고되고, PASS로 읽으면 반대로 세탁된다.
+	Inconclusive bool `json:"inconclusive"`
 }
 
 type Options struct {
-	SkipL2      bool // 재생성 전이면 L2 생략
-	MaxSamples  int  // 층별 mismatch 표본 상한 (0=20)
+	SkipL2     bool // 재생성 전이면 L2 생략
+	MaxSamples int  // 층별 mismatch 표본 상한 (0=20)
 }
 
 // Run은 시나리오 기대값과 실제 DB 상태를 대조한다.
@@ -291,7 +329,27 @@ func Run(ctx context.Context, p profile.Profile, s model.Scenario, opt Options) 
 		}
 	}
 
-	res.Pass = res.L1Raw.Pass && res.L1MV.Pass &&
+	// 대조를 한 건도 못 한 층은 통과가 아니다. "오늘 주입 → 내일 아침 검증" 절차에서
+	// hourly는 보존 창 밖이라 전부 제외되는데, 그 상태의 불일치 0을 PASS로 그리면
+	// 아무것도 안 본 실행이 통과로 남는다(E2E 러너가 셀 단위로 막는 것과 같은 규칙).
+	for _, lr := range []*LayerResult{&res.L1Raw, &res.L1MV, &res.L2Daily, &res.L2Hourly} {
+		if lr.Ran && !lr.Errored && lr.Checked == 0 && len(lr.Mismatches) == 0 {
+			lr.Pass = false
+			note := "대조 0건 — 미검증(통과 아님)"
+			if lr.Skipped > 0 {
+				note = fmt.Sprintf("대조 0건 — 검사 대상 %d개가 전부 보존 창 밖이라 미검증(통과 아님)", lr.Skipped)
+			}
+			if lr.Note == "" {
+				lr.Note = note
+			} else {
+				lr.Note = note + " / " + lr.Note
+			}
+		}
+		if lr.Verdict() == VerdictInconclusive || lr.Verdict() == VerdictError {
+			res.Inconclusive = true
+		}
+	}
+	res.Pass = !res.Inconclusive && res.L1Raw.Pass && res.L1MV.Pass &&
 		(!res.L2Daily.Ran || res.L2Daily.Pass) && (!res.L2Hourly.Ran || res.L2Hourly.Pass)
 	return res, nil
 }
@@ -325,8 +383,22 @@ func near(a, b, tol float64) bool {
 // 않으므로 finite 기준 기대값과 다른 것이 정상이며, 그 차이는 결함이 아니라
 // 경로 차이 관측(PathDiff)으로 따로 남긴다.
 func compareHours(lr *LayerResult, layer string, de model.DayExpected, actual map[int]chdb.HourAgg, tol float64, checkMaxTime bool, maxSamples int, skipNaNHours bool) {
+	nanSkipped := 0
+	defer func() {
+		// 전 시간대가 NaN이면 이 층은 한 건도 대조하지 못한다(판정은 INCONCLUSIVE).
+		// 왜 대조가 0건인지 적어두지 않으면 "조회가 실패했나"로 오해한다.
+		if nanSkipped > 0 {
+			note := fmt.Sprintf("%s: NaN 시간대 %d개는 MV 경로 대조에서 제외(경로 차이 관측으로 기록)", de.Date, nanSkipped)
+			if lr.Note == "" {
+				lr.Note = note
+			} else {
+				lr.Note += " / " + note
+			}
+		}
+	}()
 	for _, he := range de.Hours {
 		if skipNaNHours && he.HasNaN() {
+			nanSkipped++
 			continue
 		}
 		exp := he.Stats
@@ -423,7 +495,7 @@ func compareDaily(lr *LayerResult, de model.DayExpected, drow *mariadb.DailyRow,
 			addMismatch(lr, Mismatch{Layer: "L2-daily", CP: de.CheckpointID, Date: de.Date, Hour: -1,
 				Field: "max_time", Expected: de.Stats.MaxTS,
 				Actual: time.UnixMilli(*drow.MaxTimeMs).In(de.Stats.MaxTime.Location()).Format("2006-01-02 15:04:05"),
-				Note: "epoch ms, 초 단위 대조. 동률(earliest) 규칙 확인"}, maxSamples)
+				Note:   "epoch ms, 초 단위 대조. 동률(earliest) 규칙 확인"}, maxSamples)
 		}
 	}
 	// 시간별 컬럼
@@ -548,6 +620,7 @@ func compareHourly(lr *LayerResult, de model.DayExpected, hrows []mariadb.Hourly
 		}
 	}
 	if skipped > 0 {
+		lr.Skipped += skipped
 		note := fmt.Sprintf("%s: 보존 창 밖 %d개 시간대 대조 제외(정상 부재)", de.Date, skipped)
 		if lr.Note == "" {
 			lr.Note = note
@@ -587,12 +660,12 @@ func recordRawPathDiffs(res *Result, de model.DayExpected, all, finite map[int]c
 		addDiff(res, PathDiff{Layer: "L1-raw", CP: de.CheckpointID, Date: de.Date, Hour: he.Hour,
 			Field: "count", NaNRows: he.StatsAll.NaNCount,
 			Finite: statText(float64(he.Stats.Count), true), All: statText(float64(he.StatsAll.Count), true),
-			Actual: fmt.Sprintf("전체 %s / isFinite %s", statText(float64(a.Count), aok), statText(float64(f.Count), fok)),
+			Actual:  fmt.Sprintf("전체 %s / isFinite %s", statText(float64(a.Count), aok), statText(float64(f.Count), fok)),
 			Matched: "-"})
 		addDiff(res, PathDiff{Layer: "L1-raw", CP: de.CheckpointID, Date: de.Date, Hour: he.Hour,
 			Field: "avg", NaNRows: he.StatsAll.NaNCount,
 			Finite: statText(he.Stats.Avg, true), All: statText(he.StatsAll.Avg, true),
-			Actual: fmt.Sprintf("전체 %s / isFinite %s", statText(a.Avg, aok), statText(f.Avg, fok)),
+			Actual:  fmt.Sprintf("전체 %s / isFinite %s", statText(a.Avg, aok), statText(f.Avg, fok)),
 			Matched: "-"})
 	}
 }
@@ -677,7 +750,7 @@ func judgeNaNHour(res *Result, lr *LayerResult, layer string, de model.DayExpect
 			Actual: statText(v, ok), Matched: matched})
 		if matched == "none" {
 			addMismatch(lr, Mismatch{Layer: layer, CP: de.CheckpointID, Date: de.Date, Hour: he.Hour,
-				Field: f.name + colSuffix,
+				Field:    f.name + colSuffix,
 				Expected: fmt.Sprintf("%s(폴백 경로) 또는 %s(MV 경로)", statText(f.fin, true), statText(f.all, true)),
 				Actual:   statText(v, ok),
 				Note:     "NaN 시간대: 두 경로 기대값 어느 쪽과도 일치하지 않음"}, maxSamples)
@@ -691,3 +764,24 @@ func ExpectedFor(s model.Scenario) (*model.Preview, error) {
 }
 
 var _ = generator.StatsFor // (참조 유지)
+
+// Verdict는 실행 전체 판정을 3값으로 돌려준다.
+func (r *Result) Verdict() string {
+	switch {
+	case r.Pass:
+		return VerdictPass
+	case r.Inconclusive && !r.anyFail():
+		return VerdictInconclusive
+	default:
+		return VerdictFail
+	}
+}
+
+func (r *Result) anyFail() bool {
+	for _, lr := range []LayerResult{r.L1Raw, r.L1MV, r.L2Daily, r.L2Hourly} {
+		if lr.Verdict() == VerdictFail {
+			return true
+		}
+	}
+	return false
+}

@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"oqt325/internal/executor"
-	"oqt325/internal/model"
-	"oqt325/internal/verify"
+	"rawgen/internal/executor"
+	"rawgen/internal/model"
+	"rawgen/internal/verify"
 )
 
 type Bundle struct {
@@ -112,30 +112,26 @@ func Markdown(b Bundle) string {
 		for _, warn := range b.Verify.Warnings {
 			fmt.Fprintf(&w, "- 주의: %s\n", warn)
 		}
-		w.WriteString("\n| layer | ran | result | checked | mismatches | note |\n|---|---|---|---|---|---|\n")
+		w.WriteString("\n| layer | ran | result | checked | skipped(창 밖) | mismatches | note |\n|---|---|---|---|---|---|---|\n")
 		for _, lr := range []verify.LayerResult{b.Verify.L1Raw, b.Verify.L1MV, b.Verify.L2Daily, b.Verify.L2Hourly} {
-			status := "-"
-			if lr.Ran {
-				switch {
-				case lr.Errored:
-					// 대조 실패는 PASS/FAIL과 다른 상태다. FAIL로 뭉뚱그리면 "제품이 틀렸다"로
-					// 읽히고, PASS로 두면 미검증이 통과로 둔갑한다.
-					status = "ERROR(대조 불가)"
-				case lr.Pass:
-					status = "PASS"
-				default:
-					status = "FAIL"
-				}
+			// 판정은 verify가 정한 3값(+ERROR)을 그대로 쓴다. 리포트가 따로 계산하면
+			// 화면과 문서가 갈라지고, 갈라지는 쪽은 늘 "미검증을 통과로" 읽는 쪽이었다.
+			status := lr.Verdict()
+			switch status {
+			case verify.VerdictError:
+				status = "ERROR(대조 불가)"
+			case verify.VerdictInconclusive:
+				status = "INCONCLUSIVE(미검증)"
 			}
 			note := lr.Note
 			if lr.Errored && lr.Err != "" {
 				note = lr.Err
 			}
-			fmt.Fprintf(&w, "| %s | %v | %s | %d | %d | %s |\n", lr.Name, lr.Ran, status, lr.Checked, len(lr.Mismatches), note)
+			fmt.Fprintf(&w, "| %s | %v | %s | %d | %d | %d | %s |\n", lr.Name, lr.Ran, status, lr.Checked, lr.Skipped, len(lr.Mismatches), note)
 		}
-		overall := "FAIL"
-		if b.Verify.Pass {
-			overall = "PASS"
+		overall := b.Verify.Verdict()
+		if overall == verify.VerdictInconclusive {
+			overall = "INCONCLUSIVE(미검증 — 대조하지 못한 층이 있음)"
 		}
 		fmt.Fprintf(&w, "\n**전체 판정: %s**\n", overall)
 

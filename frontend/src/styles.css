@@ -626,3 +626,71 @@ details.advanced summary {
   color: var(--accent);
   font-weight: 700;
 }
+
+/* ---- 접속 세션 목록 ---- */
+
+/* 사이드바 세션 전환 — 어느 화면에 있든 대상 세션을 바꿀 수 있어야 한다.
+   (연결 화면까지 되돌아가지 않고도 "어느 서버에 쏘는지"를 확인·변경) */
+.side-select {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid #315166;
+  background: #0f1c25;
+  color: #f8fbfd;
+}
+
+.session-list {
+  max-height: 210px;
+}
+
+.session-row {
+  cursor: pointer;
+}
+
+.session-row:hover td {
+  background: #eef6fa;
+}
+
+.session-row.active td {
+  background: #e3f1f7;
+  font-weight: 600;
+}
+
+/* 미검증(INCONCLUSIVE) — PASS도 FAIL도 아닌 세 번째 상태.
+   초록/빨강 어느 쪽으로도 읽히면 안 되므로 색을 따로 쓴다. */
+.skip {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* table-layout: fixed라 열 폭이 균등 분배된다. 호스트:포트 + 상태 배지가 한 줄에
+   들어가도록 넓은 열을 따로 준다(균등 분배면 IP가 두 줄로 접힌다). */
+.session-list th:nth-child(1),
+.session-list td:nth-child(1) {
+  width: 22%;
+}
+
+.session-list th:nth-child(2),
+.session-list td:nth-child(2),
+.session-list th:nth-child(3),
+.session-list td:nth-child(3) {
+  width: 26%;
+}
+
+.session-list th:nth-child(4),
+.session-list td:nth-child(4) {
+  width: 10%;
+}
+
+.session-list th:nth-child(5),
+.session-list td:nth-child(5) {
+  width: 16%;
+}
+
+/* 전역 textarea는 리포트 보기용이라 min-height가 520px다. 세션 붙여넣기 칸은
+   패널 안 보조 입력이므로 그 높이를 물려받으면 화면이 통째로 밀린다. */
+#importProfilesText {
+  min-height: 84px;
+}
