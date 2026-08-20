@@ -1,15 +1,140 @@
+/* rawgen — IDE 테마 시스템 (2026-08-20, DataGrip/JetBrains 참조)
+   레이아웃: 상단 가로 스테퍼(점+선) / 좌측 세션 탐색기 / 하단 상태 바.
+   원칙: ① 표면은 밝기 단차 + 헤어라인 보더로만 층을 나눈다(그림자 없음)
+        ② 액센트는 파랑 하나. 골드는 브랜드 마크 전용
+        ③ 모든 색은 토큰. 테마( dark / darcula / midnight / light )는
+           :root[data-theme=...]의 토큰 재정의만으로 전환된다 — 규칙에 생색 금지 */
 :root {
-  --bg: #f5f7f9;
-  --panel: #ffffff;
-  --line: #d9e0e7;
-  --text: #17212b;
-  --muted: #667483;
-  --primary: #176f8f;
-  --primary-dark: #0f556e;
-  --accent: #8a5a00;
-  --danger: #b42318;
-  --ok: #16734d;
+  /* 표면 3층: 캔버스 < 패널 < 인셋(표 머리글·접이식 등) + 크롬(스텝바·탐색기·상태바) */
+  --bg: #1e1f22;
+  --panel: #25272a;
+  --panel-2: #2b2d30;
+  --sidebar: #191a1d;
+  --line: #393b40;
+  --line-strong: #4e5157;
+  --text: #dfe1e5;
+  --muted: #9da0a8;
+  --label: #b6bac1;
+  --nav-text: #c8ccd2;
+  --code-text: #bcbec4;
+  --input-bg: var(--bg);
+  --hover: #26282c;
+  --active-bg: #2d2f34;
+  --btn2: #34363a;
+  --btn2-hover: #3d4045;
+  --scroll: #45484d;
+  --scroll-hover: #55585e;
+  --primary: #3574f0;
+  --primary-dark: #2b62cf;
+  --primary-tint: rgba(53, 116, 240, 0.14);
+  /* 다크 지면용 상태색 — 라이트용 채도 그대로 가져오면 눈을 찌르거나 묻힌다 */
+  --accent: #d9a343;          /* warn/미검증 */
+  --danger: #f0736b;
+  --ok: #6fce7e;
+  --ok-dim: #4d8b58;
+  --tint-ok: rgba(111, 206, 126, 0.12);
+  --tint-danger: rgba(240, 115, 107, 0.12);
+  --tint-warn: rgba(217, 163, 67, 0.12);
+  --gold: #f0b33a;            /* 브랜드 마크 전용 */
+  --focus-ring: rgba(53, 116, 240, 0.35);
   font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
+}
+
+/* 다큘라 — 클래식 IntelliJ Darcula 계열(따뜻한 회색 + 노랑 워닝) */
+:root[data-theme="darcula"] {
+  --bg: #2b2b2b;
+  --panel: #313335;
+  --panel-2: #3c3f41;
+  --sidebar: #3c3f41;
+  --line: #4e5254;
+  --line-strong: #5f6467;
+  --text: #d6d9dd;
+  --muted: #9aa1a8;
+  --label: #b8bec4;
+  --nav-text: #b5bcc3;
+  --code-text: #a9b7c6;
+  --hover: #383b3d;
+  --active-bg: #414547;
+  --btn2: #45494b;
+  --btn2-hover: #4e5255;
+  --scroll: #565a5d;
+  --scroll-hover: #63676a;
+  --primary: #4a88c7;
+  --primary-dark: #3f76ad;
+  --primary-tint: rgba(74, 136, 199, 0.16);
+  --accent: #e0b25c;
+  --danger: #f5827c; /* #f26d68은 다큘라 패널 대비 4.33:1로 AA 미달 — 밝혀서 4.9:1 */
+  --ok: #77b767;
+  --ok-dim: #5a8a4e;
+  --tint-ok: rgba(119, 183, 103, 0.13);
+  --tint-danger: rgba(245, 130, 124, 0.13);
+  --tint-warn: rgba(224, 178, 92, 0.13);
+  --focus-ring: rgba(74, 136, 199, 0.35);
+}
+
+/* 미드나이트 — 깊은 청흑(GitHub Dark 계열) */
+:root[data-theme="midnight"] {
+  --bg: #0d1117;
+  --panel: #151b23;
+  --panel-2: #1c232c;
+  --sidebar: #090c10;
+  --line: #2b3138;
+  --line-strong: #3d444d;
+  --text: #e6edf3;
+  --muted: #8d96a0;
+  --label: #adb6c0;
+  --nav-text: #aab3bd;
+  --code-text: #b8c2cc;
+  --hover: #161d26;
+  --active-bg: #1d2632;
+  --btn2: #21262d;
+  --btn2-hover: #2a3038;
+  --scroll: #3a414a;
+  --scroll-hover: #48505a;
+  --primary: #3d8bfd;
+  --primary-dark: #2f74d8;
+  --primary-tint: rgba(61, 139, 253, 0.15);
+  --accent: #d9a343;
+  --danger: #f47067;
+  --ok: #57c168;
+  --ok-dim: #3e8a4b;
+  --tint-ok: rgba(87, 193, 104, 0.12);
+  --tint-danger: rgba(244, 112, 103, 0.12);
+  --tint-warn: rgba(217, 163, 67, 0.12);
+  --focus-ring: rgba(61, 139, 253, 0.35);
+}
+
+/* 라이트 — IntelliJ Light 계열. 상태색은 라이트 지면 대비로 어둡게 */
+:root[data-theme="light"] {
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --panel-2: #eef0f3;
+  --sidebar: #eef0f3;
+  --line: #d4d8dd;
+  --line-strong: #b6bcc4;
+  --text: #20242a;
+  --muted: #697077;
+  --label: #3d444d;
+  --nav-text: #4c535b;
+  --code-text: #383e45;
+  --input-bg: #ffffff;
+  --hover: #eceef1;
+  --active-bg: #e3e7ec;
+  --btn2: #e8eaee;
+  --btn2-hover: #dde0e5;
+  --scroll: #c3c8cf;
+  --scroll-hover: #aeb4bc;
+  --primary: #3574f0;
+  --primary-dark: #2b62cf;
+  --primary-tint: rgba(53, 116, 240, 0.1);
+  --accent: #8a5a00;
+  --danger: #c22f27;
+  --ok: #177239;
+  --ok-dim: #5aa476;
+  --tint-ok: rgba(23, 114, 57, 0.1);
+  --tint-danger: rgba(194, 47, 39, 0.09);
+  --tint-warn: rgba(138, 90, 0, 0.1);
+  --focus-ring: rgba(53, 116, 240, 0.25);
 }
 
 * {
@@ -20,6 +145,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+  /* IDE 밀도 — 13px 기준 */
+  font-size: 13px;
 }
 
 button,
@@ -29,72 +156,85 @@ textarea {
   font: inherit;
 }
 
-.app-shell {
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+/* IDE형 스크롤바 — OS 기본 밝은 스크롤바가 지면 톤을 깬다 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
-.sidebar {
-  background: #14212b;
-  color: #f8fbfd;
-  padding: 22px;
+::-webkit-scrollbar-thumb {
+  background: var(--scroll);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-hover);
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ---------- 앱 골격: 상단 스텝바 / 좌측 탐색기 / 콘텐츠 / 하단 상태바 ---------- */
+
+.app-shell {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* ---------- 상단 가로 스테퍼 ---------- */
+
+/* 점(인디케이터)과 선(커넥터)으로 1→9의 순차 흐름을 표현한다.
+   지나온 선(done/active 앞 구간)은 액센트로 칠해 진행감을 준다. */
+.stepbar {
+  grid-column: 1 / -1;
   display: flex;
-  flex-direction: column;
-  gap: 22px;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--sidebar);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .brand {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
+  flex: none;
 }
 
 .mark {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 11px;
   display: grid;
   place-items: center;
   font-weight: 800;
-  background: #f0b33a;
-  color: #14212b;
+  background: var(--gold);
+  color: #1e1f22;
 }
 
-.brand h1,
-.brand p,
-.topbar h2,
-.topbar p,
-.panel h3,
-.side-panel h2 {
-  margin: 0;
-}
-
-.brand h1 {
-  font-size: 18px;
-}
-
-.brand p,
-.hint,
-.topbar p {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-/* 한글은 기본값(break-word 유사)으로 두면 "생성기"가 "생성/기"처럼 낱글자로 잘린다.
-   어절 단위로 접히게 한다. */
-.brand p {
-  word-break: keep-all;
-}
-
-.sidebar .brand p,
-.sidebar .hint {
-  color: #b7c4cf;
+.brand-name {
+  font-weight: 700;
+  font-size: 14px;
 }
 
 .steps {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
 }
 
 .step,
@@ -105,24 +245,233 @@ button {
 }
 
 .step {
-  width: 100%;
-  padding: 11px 12px;
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  margin-left: 26px;
   background: transparent;
-  color: #eaf0f4;
-  text-align: left;
+  color: var(--nav-text);
+  font-size: 12.5px;
 }
 
-.step.active,
+.steps .step:first-of-type {
+  margin-left: 0;
+}
+
+/* 커넥터 선 — 단계 사이를 잇는다. done/active 단계 앞 구간은 액센트. */
+.step::before {
+  content: "";
+  position: absolute;
+  left: -26px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 2px;
+  background: var(--line);
+}
+
+.steps .step:first-of-type::before {
+  display: none;
+}
+
+.step.done::before,
+.step.active::before {
+  background: var(--primary);
+}
+
+/* 위치 인디케이터(점) — 번호가 곧 아이콘이다. 완료되면 체크가 들어온다. */
+.step-ind {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  display: grid;
+  place-items: center;
+  position: relative; /* 완료 체크(::before)를 중앙에 절대배치하기 위한 기준 */
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.step-label {
+  min-width: 0;
+}
+
 .step:hover {
-  background: #223543;
-  border-color: #315166;
+  background: var(--hover);
 }
 
-.side-panel {
-  border: 1px solid #315166;
-  border-radius: 8px;
-  padding: 14px;
-  background: #192b37;
+.step.active {
+  background: var(--active-bg);
+  color: var(--text);
+}
+
+.step.active .step-ind {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+/* 좁은 창: 비활성 단계는 점만 남기고 라벨을 접는다(선·점 흐름은 유지) */
+@media (max-width: 1500px) {
+  .stepbar .step:not(.active) .step-label {
+    display: none;
+  }
+}
+
+/* 테마 선택 — 스텝바 우측 상주 */
+.theme-select {
+  flex: none;
+  width: auto;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 5px;
+  border: 1px solid var(--line-strong);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+/* ---------- 좌측 세션 탐색기 ---------- */
+
+.sidebar {
+  background: var(--sidebar);
+  border-right: 1px solid var(--line);
+  color: var(--text);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.sx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sx-head h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.sx-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.sx-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sx-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sx-item:hover {
+  background: var(--hover);
+}
+
+/* 선택 = 지금 작업 대상. 탐색기 선택 문법(틴트 + 좌측 바)으로 표시 */
+.sx-item.active {
+  background: var(--primary-tint);
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+.sx-name {
+  font-size: 13px;
+  color: var(--nav-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sx-item.active .sx-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sx-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.sx-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* 연결 확인 점 — CH/MariaDB 순. 초록=확인, 빨강=실패, 회색=미확인 */
+.sx-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.sx-dot.ok {
+  background: var(--ok);
+}
+
+.sx-dot.bad {
+  background: var(--danger);
+}
+
+.sx-badge {
+  margin-left: auto;
+  flex: none;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--btn2);
+  color: var(--muted);
+}
+
+/* INSERT 열림 = 안심이 아니라 주의 신호 */
+.sx-badge.sx-warn {
+  background: var(--tint-warn);
+  color: var(--accent);
+}
+
+/* ---------- 공통 타이포/패널 ---------- */
+
+.topbar h2,
+.topbar p,
+.panel h3 {
+  margin: 0;
+}
+
+.hint,
+.topbar p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 안내 문단 — 세 줄 넘는 설명이 많다. 행간이 좁으면 벽처럼 읽힌다. */
+.hint,
+.panel p {
+  line-height: 1.55;
 }
 
 .toggle {
@@ -135,12 +484,11 @@ button {
 }
 
 .toggle input[type="checkbox"] {
-  /* 아래 공통 규칙의 input{width:100%}가 체크박스에도 걸린다. flex-basis:auto가 그 100%를
-     그대로 쓰기 때문에 width를 되돌리지 않으면 체크박스가 줄 전체를 차지하고
-     설명 텍스트가 오른쪽 끝에서 한 글자씩 접힌다. */
-  width: auto;
   flex: 0 0 auto;
-  margin-top: 3px; /* 첫 줄 텍스트의 광학적 중심에 맞춤 */
+  /* 공통 규칙 input{width:100%}이 체크박스에도 걸린다 — 원래 크기로 되돌린다 */
+  width: auto;
+  margin-top: 3px;
+  accent-color: var(--primary);
 }
 
 .toggle span {
@@ -148,40 +496,49 @@ button {
 }
 
 .workspace {
-  min-width: 0;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
+.topbar h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* IDE형 슬림 헤더 — 제목 영역이 크면 콘텐츠가 밀린다 */
 .topbar {
-  min-height: 82px;
+  min-height: 46px;
   display: flex;
   justify-content: space-between;
   gap: 16px;
   align-items: center;
-  padding: 18px 24px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--line);
-  background: #ffffff;
+  background: var(--bg);
 }
 
 .top-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .section {
   display: none;
-  padding: 24px;
+  padding: 16px;
   overflow: auto;
 }
 
 .section.active {
   display: block;
+  flex: 1;
+  min-height: 0;
 }
 
 .grid {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .grid.two {
@@ -190,7 +547,7 @@ button {
 
 .summary-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .panel,
@@ -198,8 +555,8 @@ button {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
+  padding: 14px;
+  margin-bottom: 12px;
 }
 
 .panel-header {
@@ -207,18 +564,19 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .panel h3 {
-  font-size: 16px;
-  margin-bottom: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 10px;
 }
 
 .field-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .field-row.three {
@@ -227,20 +585,42 @@ button {
 
 label {
   display: grid;
-  gap: 6px;
-  color: #314252;
-  font-size: 13px;
-  margin-bottom: 12px;
+  gap: 5px;
+  color: var(--label);
+  font-size: 12px;
+  margin-bottom: 10px;
 }
 
 input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid #c9d3dc;
-  border-radius: 6px;
-  padding: 9px 10px;
-  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  padding: 5px 8px;
+  background: var(--input-bg);
+  color: var(--text);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--scroll-hover);
+}
+
+/* 포커스 링 — UA 기본 outline 대신 액센트 톤. 어디에 커서가 있는지가
+   폼 중심 도구의 1차 피드백이다. */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+select option {
+  background: var(--panel);
   color: var(--text);
 }
 
@@ -252,12 +632,12 @@ textarea {
 
 .primary,
 .secondary {
-  padding: 9px 13px;
+  padding: 6px 12px;
 }
 
 .primary {
   background: var(--primary);
-  color: white;
+  color: #fff;
 }
 
 .primary:hover {
@@ -265,14 +645,19 @@ textarea {
 }
 
 .secondary {
-  background: #edf3f7;
-  color: #21313d;
-  border-color: #cbd7e0;
+  background: var(--btn2);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--btn2-hover);
+  border-color: var(--scroll-hover);
 }
 
 .small {
-  padding: 6px 10px;
-  font-size: 13px;
+  padding: 4px 9px;
+  font-size: 12px;
 }
 
 .status-strip {
@@ -285,8 +670,8 @@ textarea {
 .status-strip span,
 .badge {
   border-radius: 999px;
-  padding: 5px 8px;
-  background: #e9f4ef;
+  padding: 4px 9px;
+  background: var(--tint-ok);
   color: var(--ok);
   font-size: 12px;
 }
@@ -298,18 +683,18 @@ textarea {
 .metric span {
   display: block;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   margin-bottom: 6px;
 }
 
 .metric strong {
-  font-size: 24px;
+  font-size: 22px;
 }
 
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 table {
@@ -320,63 +705,76 @@ table {
 
 th,
 td {
-  padding: 9px 10px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--line);
   text-align: left;
-  font-size: 13px;
+  font-size: 12.5px;
   vertical-align: middle;
+  /* 숫자 열 정렬 — 자리수가 달라도 세로줄이 맞아야 표로 읽힌다 */
+  font-variant-numeric: tabular-nums;
 }
 
 th {
-  background: #eef3f6;
-  color: #334656;
-  font-weight: 700;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11.5px;
+  /* 긴 표를 내려도 열 이름이 따라온다 (.table-wrap이 스크롤 컨테이너) */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* 행 호버 — 상태색 규칙(cell-fail 등)이 뒤에 오므로 그쪽이 이긴다 */
+tbody tr:hover td {
+  background: var(--hover);
 }
 
 td input,
 td select {
-  padding: 6px 8px;
+  padding: 4px 7px;
 }
 
 .codebox {
   min-height: 180px;
   overflow: auto;
-  padding: 12px;
-  border-radius: 8px;
-  background: #111b22;
-  color: #d8edf7;
-  font-family: Consolas, "Cascadia Mono", monospace;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+  color: var(--code-text);
+  font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .remove {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
   color: var(--danger);
-  background: #fff2f0;
-  border-color: #ffd0ca;
+  background: var(--tint-danger);
+  border-color: var(--danger);
 }
 
 .error-strip {
-  margin: 14px 24px 0;
-  padding: 11px 14px;
-  border: 1px solid #ffd0ca;
-  border-radius: 8px;
-  background: #fff2f0;
+  margin: 12px 16px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  background: var(--tint-danger);
   color: var(--danger);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .warning-box {
-  margin: 0 0 16px;
-  padding: 11px 14px 11px 30px;
-  border: 1px solid #f0dcb0;
-  border-radius: 8px;
-  background: #fdf7e8;
+  margin: 0 0 12px;
+  padding: 9px 12px 9px 28px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--tint-warn);
   color: var(--accent);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .warning-box li {
@@ -384,9 +782,9 @@ td select {
 }
 
 .progress-track {
-  height: 10px;
+  height: 8px;
   border-radius: 999px;
-  background: #e3eaf0;
+  background: var(--btn2);
   overflow: hidden;
   margin-bottom: 12px;
 }
@@ -412,9 +810,55 @@ button:disabled {
   color: var(--danger);
 }
 
+/* ---------- 하단 상태 바 (IDE 문법) ---------- */
+
+/* 어느 화면에 있든 "지금 어느 서버에 붙어 있고, 무엇이 돌고 있는가"를 상시 노출.
+   주입 도구에서 대상 오인이 가장 비싼 실수다. */
+.statusbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--sidebar);
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.statusbar .sb-item {
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.statusbar .sb-sep {
+  color: var(--line-strong);
+}
+
+.statusbar .sb-right {
+  margin-left: auto;
+}
+
+.statusbar .sb-ok {
+  color: var(--ok);
+}
+
+.statusbar .sb-warn {
+  color: var(--accent);
+}
+
+.statusbar .sb-busy {
+  color: var(--primary);
+  font-weight: 600;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
+    height: auto;
   }
 
   .sidebar {
@@ -438,16 +882,16 @@ button:disabled {
 
 /* 실제 INSERT를 포함하는 위험 버튼 — dry-run/검증과 색으로 구분 */
 .danger {
-  background: var(--danger);
-  color: white;
+  background: #c94f48;
+  color: #fff;
 }
 
 .danger:hover {
-  background: #8f1c13;
+  background: #b23f38;
 }
 
 .danger-zone {
-  border-left: 3px solid var(--danger);
+  border-left: 3px solid #c94f48;
 }
 
 /* 에러 스트립: 섹션 접두 + 닫기 버튼 */
@@ -460,31 +904,47 @@ button:disabled {
 
 .error-close {
   flex: none;
-  padding: 4px 10px;
+  padding: 3px 9px;
   font-size: 12px;
   background: transparent;
   color: var(--danger);
-  border: 1px solid #ffd0ca;
-  border-radius: 6px;
+  border: 1px solid var(--danger);
+  border-radius: 5px;
 }
 
-/* 사이드바 단계 완료/차단 상태 */
-.step {
-  position: relative;
+/* 단계 완료/차단 상태.
+   완료는 텍스트("완료")가 아니라 인디케이터 안의 체크로 표시한다 —
+   위치(번호)와 완료 피드백(체크)이 같은 자리를 쓰는 스테퍼 문법. 이모지 금지라 SVG mask. */
+.step.done .step-ind {
+  border-color: var(--ok-dim);
+  color: transparent; /* 번호 숨김 — 체크가 자리를 이어받는다 */
 }
 
-.step.done::after {
-  content: "완료";
+.step.done .step-ind::before {
+  content: "";
+  /* 그리드 행으로 흐르면 숨긴 번호 텍스트와 두 줄이 되어 체크가 위로 밀린다 — 절대배치로 중앙 고정 */
   position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 11px;
-  color: #7fd4a8;
+  inset: 0;
+  margin: auto;
+  width: 10px;
+  height: 10px;
+  background: var(--ok);
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>') center / contain no-repeat;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>') center / contain no-repeat;
+}
+
+/* 활성 + 완료가 겹치면 활성(현재 위치)이 이긴다 */
+.step.done.active .step-ind {
+  border-color: var(--primary);
+  color: transparent;
+}
+
+.step.done.active .step-ind::before {
+  background: #fff;
 }
 
 .step.blocked {
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 /* E2E 셀 요약 칩 */
@@ -496,12 +956,12 @@ button:disabled {
 }
 
 .chip {
-  padding: 4px 12px;
+  padding: 3px 11px;
   border-radius: 999px;
   font-size: 12px;
-  background: #edf3f7;
-  color: #21313d;
-  border: 1px solid #cbd7e0;
+  background: var(--btn2);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
 }
 
 .chip.active {
@@ -514,12 +974,12 @@ button:disabled {
 
 #e2eProblemOnly.active {
   background: var(--primary);
-  color: white;
+  color: #fff;
 }
 
 /* E2E 셀 행 상태 색 + 다음 판정 강조 */
-tr.cell-fail td { background: #fff2f0; }
-tr.cell-recheck td { background: #fdf7e8; }
+tr.cell-fail td { background: var(--tint-danger); }
+tr.cell-recheck td { background: var(--tint-warn); }
 tr.cell-skip td { color: var(--muted); }
 tr.cell-next td { box-shadow: inset 3px 0 0 var(--primary); }
 
@@ -529,13 +989,13 @@ tr.cell-next td { box-shadow: inset 3px 0 0 var(--primary); }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  border: 1px solid #f0dcb0;
-  border-radius: 8px;
-  background: #fdf7e8;
-  color: #5c4a12;
-  font-size: 13px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--tint-warn);
+  color: var(--accent);
+  font-size: 12.5px;
 }
 
 .resume-actions {
@@ -548,16 +1008,16 @@ tr.cell-next td { box-shadow: inset 3px 0 0 var(--primary); }
 .preflight {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .pf-row {
   display: flex;
   gap: 12px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  background: #f2f6f9;
+  padding: 5px 9px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  background: var(--panel-2);
 }
 
 .pf-label {
@@ -567,9 +1027,9 @@ tr.cell-next td { box-shadow: inset 3px 0 0 var(--primary); }
 }
 
 .pf-ok .pf-label { color: var(--ok); }
-.pf-bad { background: #fff2f0; }
+.pf-bad { background: var(--tint-danger); }
 .pf-bad .pf-label { color: var(--danger); }
-.pf-warn { background: #fdf7e8; }
+.pf-warn { background: var(--tint-warn); }
 .pf-warn .pf-label { color: var(--accent); }
 
 /* 테이블 정렬 표시 (텍스트 글리프 — 이모지 아님) */
@@ -584,7 +1044,7 @@ th.sort-desc::after { content: " ▼"; font-size: 10px; }
 /* E2E 고급 설정 접기 */
 details.advanced {
   margin: 8px 0;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 details.advanced summary {
@@ -599,13 +1059,13 @@ details.advanced summary {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 8px 10px;
-  background: #f7f9fb;
+  background: var(--panel-2);
 }
 
 .advanced summary {
   cursor: pointer;
-  font-size: 13px;
-  color: #314252;
+  font-size: 12.5px;
+  color: var(--label);
 }
 
 .advanced .hint {
@@ -614,48 +1074,17 @@ details.advanced summary {
 
 /* 판정된 셀이 없는데 진행률만 차오르는 것을 막기 위한 경고색 */
 .bar-warn {
-  background: #d9a441;
+  background: var(--accent);
 }
 
 /* NaN이 섞인 시간대 — 경로별 기대가 갈리는 행 */
 .row-nan {
-  background: #fdf7e8;
+  background: var(--tint-warn);
 }
 
 .nan-mark {
   color: var(--accent);
   font-weight: 700;
-}
-
-/* ---- 접속 세션 목록 ---- */
-
-/* 사이드바 세션 전환 — 어느 화면에 있든 대상 세션을 바꿀 수 있어야 한다.
-   (연결 화면까지 되돌아가지 않고도 "어느 서버에 쏘는지"를 확인·변경) */
-.side-select {
-  width: 100%;
-  margin-bottom: 8px;
-  padding: 7px 8px;
-  border-radius: 6px;
-  border: 1px solid #315166;
-  background: #0f1c25;
-  color: #f8fbfd;
-}
-
-.session-list {
-  max-height: 210px;
-}
-
-.session-row {
-  cursor: pointer;
-}
-
-.session-row:hover td {
-  background: #eef6fa;
-}
-
-.session-row.active td {
-  background: #e3f1f7;
-  font-weight: 600;
 }
 
 /* 미검증(INCONCLUSIVE) — PASS도 FAIL도 아닌 세 번째 상태.
@@ -665,32 +1094,25 @@ details.advanced summary {
   font-weight: 700;
 }
 
-/* table-layout: fixed라 열 폭이 균등 분배된다. 호스트:포트 + 상태 배지가 한 줄에
-   들어가도록 넓은 열을 따로 준다(균등 분배면 IP가 두 줄로 접힌다). */
-.session-list th:nth-child(1),
-.session-list td:nth-child(1) {
-  width: 22%;
-}
-
-.session-list th:nth-child(2),
-.session-list td:nth-child(2),
-.session-list th:nth-child(3),
-.session-list td:nth-child(3) {
-  width: 26%;
-}
-
-.session-list th:nth-child(4),
-.session-list td:nth-child(4) {
-  width: 10%;
-}
-
-.session-list th:nth-child(5),
-.session-list td:nth-child(5) {
-  width: 16%;
-}
-
 /* 전역 textarea는 리포트 보기용이라 min-height가 520px다. 세션 붙여넣기 칸은
    패널 안 보조 입력이므로 그 높이를 물려받으면 화면이 통째로 밀린다. */
 #importProfilesText {
   min-height: 84px;
+}
+
+/* Hourly Overrides — table-layout: fixed의 균등 분배면 mode 셀렉트가
+   "NUL…"처럼 잘린다. 읽는 열(mode)에 폭을 몰아주고 삭제 열은 고정. */
+.hour-table th:nth-child(3),
+.hour-table td:nth-child(3) {
+  width: 18%;
+}
+
+.hour-table th:nth-child(1),
+.hour-table td:nth-child(1) {
+  width: 11%;
+}
+
+.hour-table th:nth-child(8),
+.hour-table td:nth-child(8) {
+  width: 48px;
 }

@@ -246,8 +246,6 @@ function fillForm(p) {
   $("pfTblCheckpoint").value = p?.checkpointTable || "";
   $("pfTblExcludeDate").value = p?.excludeDateTable || "";
   renderSideProfile();
-  const sel = $("sideSessionSelect");
-  if (sel) sel.value = state.profileId || "";
 }
 
 function currentProfile() {
@@ -256,8 +254,11 @@ function currentProfile() {
 
 function renderSideProfile() {
   const p = currentProfile();
-  $("sideProfile").textContent = p ? `${p.name} (${p.clickhouse?.host || "?"})` : "선택 안 됨";
-  $("sideTestOnly").textContent = p ? (p.testOnly ? "TestOnly: INSERT 허용" : "TestOnly 아님: INSERT 차단") : "";
+  // 하단 상태 바 — 대상 세션·INSERT 허용 여부를 화면 최하단에 상시 노출(IDE 문법)
+  $("stSession").textContent = p ? `${p.name} @ ${p.clickhouse?.host || "?"}` : "세션 없음";
+  const st = $("stTestOnly");
+  st.textContent = p ? (p.testOnly ? "INSERT 허용" : "INSERT 차단") : "";
+  st.className = "sb-item " + (p?.testOnly ? "sb-warn" : "sb-ok");
   updateInsertButton();
   updateE2EButtons();
   updateStepStates();
@@ -272,13 +273,6 @@ async function loadProfiles(selectId) {
   renderSessionList();
 }
 
-function connBadge(id, key) {
-  const v = state.connCheck[id]?.[key];
-  if (v === true) return '<span class="pass">OK</span>';
-  if (v === false) return '<span class="fail">실패</span>';
-  return '<span class="hint">미확인</span>';
-}
-
 function shortTime(iso) {
   if (!iso) return "-";
   const d = new Date(iso);
@@ -287,35 +281,42 @@ function shortTime(iso) {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// renderSessionList는 등록된 세션을 표로 그린다. 선택 행이 곧 "지금 작업 대상"이고,
-// 주입/검증/E2E가 전부 이 선택을 따라가므로 어느 행이 선택됐는지 눈에 띄어야 한다.
+// renderSessionList는 좌측 세션 탐색기를 그린다(DataGrip 탐색기 문법).
+// 선택 항목이 곧 "지금 작업 대상"이고 주입/검증/E2E가 전부 이 선택을 따라가므로,
+// 어느 항목이 선택됐는지가 어느 화면에서든 보여야 한다.
 function renderSessionList() {
-  const rows = state.profiles
+  const connDot = (id, key) => {
+    const v = state.connCheck[id]?.[key];
+    const cls = v === true ? "ok" : v === false ? "bad" : "";
+    return `<span class="sx-dot ${cls}" title="${key === "ch" ? "ClickHouse" : "MariaDB"} ${
+      v === true ? "연결 확인됨" : v === false ? "연결 실패" : "미확인"
+    }"></span>`;
+  };
+  const items = state.profiles
     .map((p) => {
       const active = p.id === state.profileId;
-      return `<tr class="session-row${active ? " active" : ""}" data-id="${esc(p.id)}">
-        <td>${active ? "● " : ""}${esc(p.name)}</td>
-        <td>${esc(p.clickhouse?.host || "-")}:${p.clickhouse?.port || "-"} ${connBadge(p.id, "ch")}</td>
-        <td>${esc(p.mariadb?.host || "-")}:${p.mariadb?.port || "-"} ${connBadge(p.id, "maria")}</td>
-        <td>${p.testOnly ? '<span class="pass">허용</span>' : '<span class="hint">차단</span>'}</td>
-        <td>${esc(shortTime(p.lastUsedAt))}</td>
-      </tr>`;
+      return `<div class="sx-item${active ? " active" : ""}" data-id="${esc(p.id)}"
+        title="마지막 사용 ${esc(shortTime(p.lastUsedAt))}">
+        <div class="sx-name">${esc(p.name)}</div>
+        <div class="sx-sub">
+          <span class="sx-host">${esc(p.clickhouse?.host || "-")}</span>
+          ${connDot(p.id, "ch")}${connDot(p.id, "maria")}
+          <span class="sx-badge ${p.testOnly ? "sx-warn" : ""}">${p.testOnly ? "INSERT" : "읽기"}</span>
+        </div>
+      </div>`;
     })
     .join("");
-  $("sessionRows").innerHTML =
-    rows || '<tr><td colspan="5" class="hint">등록된 세션이 없습니다 — "새 세션"으로 추가하세요.</td></tr>';
-  document.querySelectorAll("#sessionRows .session-row").forEach((tr) =>
-    tr.addEventListener("click", () => {
-      const p = state.profiles.find((x) => x.id === tr.dataset.id);
+  $("sessionExplorer").innerHTML =
+    items || '<p class="hint">등록된 세션이 없습니다 — "새 세션"으로 추가하세요.</p>';
+  document.querySelectorAll("#sessionExplorer .sx-item").forEach((el) =>
+    el.addEventListener("click", () => {
+      const p = state.profiles.find((x) => x.id === el.dataset.id);
       if (p) {
         fillForm(p);
         renderSessionList();
       }
     }),
   );
-  const sel = $("sideSessionSelect");
-  sel.innerHTML = state.profiles.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
-  sel.value = state.profileId || "";
 }
 
 // ---------- Targets ----------
@@ -572,11 +573,12 @@ function updateInsertButton() {
   // E2E 대기 중 같은 (cp×날짜)에 추가 INSERT·동시 verify는 expected/결과를 오염시킴
   $("verifyL1").disabled = e2eState.running;
   $("verifyAll").disabled = e2eState.running;
-  $("sideBusy").textContent = e2eState.running
+  const busyText = e2eState.running
     ? "E2E 실행 중 — Generate/Verify 잠김"
     : state.running
       ? "Generate 실행 중"
       : "";
+  $("stBusy").textContent = busyText;
 }
 
 function genLog(line) {
@@ -954,12 +956,13 @@ $("deleteProfile").addEventListener(
     await loadProfiles();
   }),
 );
-$("sideSessionSelect").addEventListener("change", () => {
-  const p = state.profiles.find((x) => x.id === $("sideSessionSelect").value);
-  if (p) {
-    fillForm(p);
-    renderSessionList();
-  }
+// 테마 선택 — data-theme 토큰 스위치(head의 부트스트랩 스크립트가 첫 페인트 전 적용)
+$("themeSelect").addEventListener("change", () => {
+  const t = $("themeSelect").value;
+  document.documentElement.dataset.theme = t;
+  try {
+    localStorage.setItem("rawgen.theme", t);
+  } catch {}
 });
 bindBusy("dupProfile", async () => {
   if (!state.profileId) throw new Error("복제할 세션을 먼저 고르세요");
@@ -1341,9 +1344,28 @@ function bindRuntimeEvents() {
   updateE2EButtons();
   updateStepStates();
   bindRuntimeEvents();
+  $("themeSelect").value = document.documentElement.dataset.theme || "dark";
+
+  // Ctrl+1~9 = 단계 이동 (키보드 우선 — IDE 사용자 기대)
+  const stepOrder = [...document.querySelectorAll(".step")].map((el) => el.dataset.section);
+  document.addEventListener("keydown", (e) => {
+    if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
+    const n = Number(e.key);
+    if (n >= 1 && n <= stepOrder.length) {
+      e.preventDefault();
+      setSection(stepOrder[n - 1]);
+    }
+  });
+
   if (api()) {
     loadProfiles().catch(showError);
     checkPendingE2E().catch(() => {});
+    api()
+      .Info()
+      .then((i) => {
+        if (i?.version) $("stVersion").textContent = "rawgen v" + i.version;
+      })
+      .catch(() => {});
     // 프런트가 리로드돼도 백엔드 실행 상태를 복원 (E2E는 백엔드에서 계속 돈다)
     api()
       .Busy()
