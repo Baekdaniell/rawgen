@@ -199,18 +199,21 @@ textarea {
   align-items: center;
   gap: 16px;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 14px 0 0;
   background: var(--sidebar);
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
   white-space: nowrap;
 }
 
+/* 브랜드 = 좌측 탐색기 컬럼(232px)과 같은 폭 — 스테퍼가 탐색기 오른쪽 경계에서
+   시작해 아래 콘텐츠 영역과 세로줄이 맞는다. */
 .brand {
   display: flex;
   gap: 8px;
   align-items: center;
   flex: none;
+  width: 232px;
+  padding: 0 14px;
 }
 
 .mark {
@@ -230,11 +233,14 @@ textarea {
   font-size: 14px;
 }
 
+/* 스크롤은 steps에만 — stepbar 전체가 스크롤 컨테이너면 설정 팝오버가 잘리고
+   브랜드·기어가 같이 밀린다. */
 .steps {
   display: flex;
   align-items: center;
   flex: 1;
   min-width: 0;
+  overflow-x: auto;
 }
 
 .step,
@@ -318,23 +324,80 @@ button {
   font-weight: 700;
 }
 
-/* 좁은 창: 비활성 단계는 점만 남기고 라벨을 접는다(선·점 흐름은 유지) */
+/* 좁은 창: 라벨은 항상 보인다(오너 요청) — 밀도를 줄이고, 그래도 넘치면
+   .steps가 가로 스크롤된다. */
 @media (max-width: 1500px) {
-  .stepbar .step:not(.active) .step-label {
-    display: none;
+  .step {
+    gap: 5px;
+    padding: 4px 7px;
+    margin-left: 14px;
+    font-size: 12px;
+  }
+
+  .step::before {
+    left: -14px;
+    width: 14px;
   }
 }
 
-/* 테마 선택 — 스텝바 우측 상주 */
-.theme-select {
+/* ---------- 설정 메뉴 (스텝바 우측 기어 → 팝오버) ---------- */
+
+.settings {
+  position: relative;
   flex: none;
-  width: auto;
-  padding: 4px 8px;
-  font-size: 12px;
-  border-radius: 5px;
-  border: 1px solid var(--line-strong);
-  background: var(--input-bg);
+}
+
+.settings-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--nav-text);
+}
+
+.settings-btn:hover {
+  background: var(--hover);
+}
+
+.settings-btn.open {
+  background: var(--active-bg);
   color: var(--text);
+}
+
+/* 기어 아이콘 — 이모지 금지라 SVG mask(완료 체크와 같은 문법) */
+.icon-gear {
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>') center / contain no-repeat;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>') center / contain no-repeat;
+}
+
+.settings-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  min-width: 210px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  /* 표면 층은 그림자 없음 원칙이지만 팝오버는 지면 위에 뜨는 층 — 분리감이 필요하다 */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.settings-caption {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.settings-menu .settings-field {
+  margin-bottom: 0;
 }
 
 /* ---------- 좌측 세션 탐색기 ---------- */

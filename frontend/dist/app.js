@@ -956,6 +956,26 @@ $("deleteProfile").addEventListener(
     await loadProfiles();
   }),
 );
+// 설정 메뉴 — 기어 버튼 토글, 바깥 클릭·Esc로 닫는다(메뉴 안 클릭은 유지)
+function closeSettingsMenu() {
+  $("settingsMenu").hidden = true;
+  $("settingsBtn").classList.remove("open");
+  $("settingsBtn").setAttribute("aria-expanded", "false");
+}
+$("settingsBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = $("settingsMenu").hidden;
+  $("settingsMenu").hidden = !open;
+  $("settingsBtn").classList.toggle("open", open);
+  $("settingsBtn").setAttribute("aria-expanded", String(open));
+});
+$("settingsMenu").addEventListener("click", (e) => e.stopPropagation());
+document.addEventListener("click", () => {
+  if (!$("settingsMenu").hidden) closeSettingsMenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("settingsMenu").hidden) closeSettingsMenu();
+});
 // 테마 선택 — data-theme 토큰 스위치(head의 부트스트랩 스크립트가 첫 페인트 전 적용)
 $("themeSelect").addEventListener("change", () => {
   const t = $("themeSelect").value;

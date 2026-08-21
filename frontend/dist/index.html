@@ -15,7 +15,7 @@
   <body>
     <main class="app-shell">
       <!-- 상단 가로 스테퍼 — 점(인디케이터)과 선(커넥터)으로 1→9 순차 흐름을 표현.
-           done=체크, active=파랑 채움+라벨 강조. 좁은 창에서는 비활성 라벨을 접는다. -->
+           done=체크, active=파랑 채움+라벨 강조. 라벨은 항상 보이고, 좁은 창은 밀도 축소+가로 스크롤. -->
       <header class="stepbar">
         <div class="brand" title="MK119 통계 검증용 raw data 생성기">
           <div class="mark">RG</div>
@@ -32,12 +32,23 @@
           <button class="step" data-section="e2e"><span class="step-ind">8</span><span class="step-label">온종일 자동 검증</span></button>
           <button class="step" data-section="report"><span class="step-ind">9</span><span class="step-label">리포트</span></button>
         </nav>
-        <select id="themeSelect" class="theme-select" title="테마">
-          <option value="dark">다크</option>
-          <option value="darcula">다큘라</option>
-          <option value="midnight">미드나이트</option>
-          <option value="light">라이트</option>
-        </select>
+        <div class="settings">
+          <button id="settingsBtn" class="settings-btn" title="설정" aria-haspopup="true" aria-expanded="false">
+            <span class="icon-gear" aria-hidden="true"></span>
+          </button>
+          <div id="settingsMenu" class="settings-menu" hidden>
+            <div class="settings-caption">설정</div>
+            <label class="settings-field">
+              테마
+              <select id="themeSelect" title="테마">
+                <option value="dark">다크</option>
+                <option value="darcula">다큘라</option>
+                <option value="midnight">미드나이트</option>
+                <option value="light">라이트</option>
+              </select>
+            </label>
+          </div>
+        </div>
       </header>
 
       <!-- 좌측 세션 탐색기 (DataGrip 데이터베이스 탐색기 문법) — 등록된 접속 세션을
