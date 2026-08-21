@@ -11,6 +11,27 @@ const SCENARIO_STORE_KEY_LEGACY = "sg.lastScenario"; // 개명 전 키 (읽기 �
 // 세션(구버전 데이터·새 세션)은 지금 화면 내용을 물려받은 뒤 자기 키에 저장된다.
 const scenarioKeyFor = (id) => "rawgen.scenario." + id;
 
+// 1회성 정리: 세션별 저장 첫 배포판(2026-08-21 오전)은 저장분 없는 세션에 "현재 화면을
+// 복사 후 저장"했다 — 세션들을 오가기만 해도 같은 시나리오가 전 세션에 찍혔다.
+// 전역 lastScenario와 내용이 같은 세션 키는 그 복사 스탬프이므로 지운다(마지막 사용 세션 제외
+// — 전역 키는 항상 활성 세션의 내용과 같아서, 그 세션 것만은 진짜 작업이다).
+(function cleanupCopiedScenarioStamps() {
+  try {
+    if (localStorage.getItem("rawgen.scnCleanup") === "1") return;
+    const global = localStorage.getItem(SCENARIO_STORE_KEY);
+    const keep = scenarioKeyFor(localStorage.getItem("rawgen.lastSessionId") || "");
+    if (global) {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("rawgen.scenario.") && k !== keep && localStorage.getItem(k) === global) {
+          localStorage.removeItem(k);
+        }
+      }
+    }
+    localStorage.setItem("rawgen.scnCleanup", "1");
+  } catch {}
+})();
+
 const state = {
   profiles: [],
   profileId: "",
@@ -299,11 +320,39 @@ function resetSessionWork() {
   updateStepStates();
 }
 
+// 저장된 작업이 없는 세션의 초기 상태 — 부팅 기본값과 같은 빈 시나리오.
+// 다른 세션의 내용을 물려받지 않는다: 세션마다 자기 작업대가 따로라는 게 눈에 보여야 하고,
+// 다른 서버용으로 짠 날짜·cp가 복사돼 오면 오주입의 씨앗이 된다.
+function defaultScenario() {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  const dt = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`;
+  return {
+    name: "gui",
+    checkpointIds: [],
+    startDate: dt,
+    endDate: dt,
+    intervalSec: 10,
+    driverCode: "numeric_percent",
+    seed: 325,
+    batchSize: 100000,
+    daily: { min: 20, max: 40, avg: 30 },
+    hourlyOverrides: [
+      { hour: 2, mode: "null", goal: { min: 0, max: 0, avg: 0 } },
+      { hour: 15, mode: "goal", goal: { min: 28, max: 40, avg: 34 } },
+    ],
+  };
+}
+
 // 세션 선택의 단일 경로 — 접속 폼을 채우고, 실제로 다른 세션이면 작업 결과를 리셋한 뒤
-// 그 세션의 저장된 시나리오를 복원한다. 저장분이 없으면 지금 화면 내용을 물려받아
-// 즉시 그 세션 키에 저장한다(전환을 오가도 내용이 안정되도록).
+// 그 세션의 저장된 시나리오를 복원한다. 저장분이 없으면 빈 기본 시나리오로 시작한다.
+// 예외: 페이지 로드 후 첫 활성화(부팅)만은 화면에 복원돼 있는 전역 lastScenario를 물려받는다
+// — 세션별 저장이 없던 시절의 마지막 작업이 "마지막에 쓰던 세션" 소속으로 이관되는 경로.
+let bootActivation = true;
 function activateSession(p) {
   const changed = (p?.id || "") !== state.profileId;
+  const isBoot = bootActivation;
+  bootActivation = false;
   fillForm(p);
   if (!changed) return;
   resetSessionWork();
@@ -319,7 +368,10 @@ function activateSession(p) {
       restored = true;
     }
   } catch {}
-  if (!restored) refreshScenarioJson();
+  if (!restored) {
+    if (isBoot) refreshScenarioJson(); // 현재 화면(전역 복원분)을 이 세션 것으로 저장
+    else applyScenario(defaultScenario());
+  }
 }
 
 function shortTime(iso) {
