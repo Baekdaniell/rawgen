@@ -145,29 +145,66 @@
             </article>
 
             <article class="panel">
-              <h3>MariaDB</h3>
-              <div class="field-row">
-                <label>host <input id="pfMariaHost" type="text" placeholder="172.17.88.2" /></label>
-                <label>port <input id="pfMariaPort" type="number" value="3306" /></label>
+              <div class="panel-header">
+                <h3>데이터 소스</h3>
+                <div class="ds-add">
+                  <button id="dsAddBtn" class="secondary small" aria-haspopup="true" aria-expanded="false">+ 데이터 소스 추가</button>
+                  <div id="dsAddMenu" class="ds-menu" hidden>
+                    <div class="ds-menu-caption">완전 지원</div>
+                    <button class="ds-menu-item" data-ds="maria" type="button">
+                      <span class="ds-icon ds-icon-maria" aria-hidden="true"></span>
+                      <span class="ds-menu-name">MariaDB</span>
+                      <span class="ds-menu-note">제품 통계 (daily·hourly)</span>
+                    </button>
+                    <button class="ds-menu-item" data-ds="ch" type="button">
+                      <span class="ds-icon ds-icon-ch" aria-hidden="true"></span>
+                      <span class="ds-menu-name">ClickHouse</span>
+                      <span class="ds-menu-note">raw 주입 (native :9000)</span>
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div class="field-row">
-                <label>database <input id="pfMariaDb" type="text" value="liz" /></label>
-                <label>user <input id="pfMariaUser" type="text" /></label>
-              </div>
-              <label>password <input id="pfMariaPw" type="password" /></label>
-              <button id="testMaria" class="secondary">MariaDB 연결 테스트</button>
+              <p class="hint">
+                검증에는 <strong>MariaDB</strong>(제품 통계)와 <strong>ClickHouse</strong>(raw 주입) 두 소스가 모두 필요합니다.
+                목록에서 클릭하면 아래에 설정이 열립니다.
+              </p>
+              <div id="dsList" class="ds-list"></div>
 
-              <h3 style="margin-top: 18px">ClickHouse (native :9000)</h3>
-              <div class="field-row">
-                <label>host <input id="pfChHost" type="text" placeholder="172.17.88.2" /></label>
-                <label>port <input id="pfChPort" type="number" value="9000" /></label>
+              <div id="dsFormMaria" class="ds-form" hidden>
+                <div class="ds-form-head">
+                  <span class="ds-icon ds-icon-maria" aria-hidden="true"></span>
+                  <strong>MariaDB</strong>
+                  <button id="dsRemoveMaria" class="remove" title="이 데이터 소스 제거">×</button>
+                </div>
+                <div class="field-row">
+                  <label>host <input id="pfMariaHost" type="text" placeholder="172.17.88.2" /></label>
+                  <label>port <input id="pfMariaPort" type="number" value="3306" /></label>
+                </div>
+                <div class="field-row">
+                  <label>database <input id="pfMariaDb" type="text" value="liz" /></label>
+                  <label>user <input id="pfMariaUser" type="text" /></label>
+                </div>
+                <label>password <input id="pfMariaPw" type="password" /></label>
+                <button id="testMaria" class="secondary">MariaDB 연결 테스트</button>
               </div>
-              <div class="field-row">
-                <label>database <input id="pfChDb" type="text" value="liz" /></label>
-                <label>user <input id="pfChUser" type="text" value="default" /></label>
+
+              <div id="dsFormCh" class="ds-form" hidden>
+                <div class="ds-form-head">
+                  <span class="ds-icon ds-icon-ch" aria-hidden="true"></span>
+                  <strong>ClickHouse</strong> <span class="hint">native :9000</span>
+                  <button id="dsRemoveCh" class="remove" title="이 데이터 소스 제거">×</button>
+                </div>
+                <div class="field-row">
+                  <label>host <input id="pfChHost" type="text" placeholder="172.17.88.2" /></label>
+                  <label>port <input id="pfChPort" type="number" value="9000" /></label>
+                </div>
+                <div class="field-row">
+                  <label>database <input id="pfChDb" type="text" value="liz" /></label>
+                  <label>user <input id="pfChUser" type="text" value="default" /></label>
+                </div>
+                <label>password <input id="pfChPw" type="password" /></label>
+                <button id="testCh" class="secondary">ClickHouse 연결 테스트</button>
               </div>
-              <label>password <input id="pfChPw" type="password" /></label>
-              <button id="testCh" class="secondary">ClickHouse 연결 테스트</button>
             </article>
           </div>
 

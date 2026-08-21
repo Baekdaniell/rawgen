@@ -271,7 +271,99 @@ function fillForm(p) {
   $("pfTblHourly").value = p?.hourlyTable || "";
   $("pfTblCheckpoint").value = p?.checkpointTable || "";
   $("pfTblExcludeDate").value = p?.excludeDateTable || "";
+  // 데이터 소스 목록: host가 있으면 "추가된" 소스. 선택은 유효하면 유지한다
+  // (연결 테스트가 저장→재로드를 부르는데, 그때 열어둔 폼이 닫히면 안 된다).
+  dsState.added.maria = !!p?.mariadb?.host;
+  dsState.added.ch = !!p?.clickhouse?.host;
+  if (!dsState.selected || !dsState.added[dsState.selected]) {
+    dsState.selected = dsState.added.maria ? "maria" : dsState.added.ch ? "ch" : null;
+  }
+  renderDataSources();
   renderSideProfile();
+}
+
+// ---------- 데이터 소스 목록 (DataGrip "데이터 소스 추가" 문법) ----------
+// 백엔드 스키마는 세션당 MariaDB+ClickHouse 각 1개로 고정 — 목록/추가 메뉴는 그 두
+// 슬롯의 표면이다. 입력 필드 id는 그대로라 profileFromForm/fillForm은 무변경.
+
+const DS_META = {
+  maria: { name: "MariaDB", icon: "ds-icon-maria", form: "dsFormMaria", connKey: "maria", hostId: "pfMariaHost", portId: "pfMariaPort", dbId: "pfMariaDb" },
+  ch: { name: "ClickHouse", icon: "ds-icon-ch", form: "dsFormCh", connKey: "ch", hostId: "pfChHost", portId: "pfChPort", dbId: "pfChDb" },
+};
+const dsState = { added: { maria: false, ch: false }, selected: null };
+
+function renderDataSources() {
+  const rows = [];
+  for (const k of ["maria", "ch"]) {
+    const m = DS_META[k];
+    $(m.form).hidden = !(dsState.added[k] && dsState.selected === k);
+    const item = document.querySelector(`.ds-menu-item[data-ds="${k}"]`);
+    item.disabled = dsState.added[k];
+    if (!dsState.added[k]) continue;
+    const host = $(m.hostId).value.trim();
+    const sub = host ? `${host}:${$(m.portId).value} / ${$(m.dbId).value}` : "호스트 미입력";
+    const v = state.connCheck[state.profileId]?.[m.connKey];
+    rows.push(`<div class="ds-row${dsState.selected === k ? " active" : ""}" data-ds="${k}">
+      <span class="ds-icon ${m.icon}" aria-hidden="true"></span>
+      <span style="min-width:0"><span class="ds-row-name">${m.name}</span><br /><span class="ds-row-sub">${esc(sub)}</span></span>
+      <span class="sx-dot ${v === true ? "ok" : v === false ? "bad" : ""}" title="${v === true ? "연결 확인됨" : v === false ? "연결 실패" : "미확인"}"></span>
+    </div>`);
+  }
+  $("dsList").innerHTML = rows.length
+    ? rows.join("")
+    : '<p class="hint">추가된 데이터 소스가 없습니다 — [+ 데이터 소스 추가]로 시작하세요.</p>';
+}
+
+function closeDsMenu() {
+  $("dsAddMenu").hidden = true;
+  $("dsAddBtn").setAttribute("aria-expanded", "false");
+}
+
+// 제거는 두 번 클릭(입력해 둔 호스트·비밀번호가 날아간다) — 네이티브 confirm은
+// WebView를 멈추므로 resumeDiscard와 같은 인라인 무장 패턴을 쓴다.
+function armThenRun(btn, fn) {
+  if (btn.dataset.armed) {
+    delete btn.dataset.armed;
+    btn.textContent = "×";
+    fn();
+    return;
+  }
+  btn.dataset.armed = "1";
+  btn.textContent = "제거 확인";
+  setTimeout(() => {
+    if (btn.dataset.armed) {
+      delete btn.dataset.armed;
+      btn.textContent = "×";
+    }
+  }, 4000);
+}
+
+// 소스 제거 = 해당 슬롯을 기본값으로 비운다(저장 전까지는 로컬 변경일 뿐).
+const DS_DEFAULTS = {
+  maria: () => {
+    $("pfMariaHost").value = "";
+    $("pfMariaPort").value = 3306;
+    $("pfMariaDb").value = "liz";
+    $("pfMariaUser").value = "";
+    $("pfMariaPw").value = "";
+  },
+  ch: () => {
+    $("pfChHost").value = "";
+    $("pfChPort").value = 9000;
+    $("pfChDb").value = "liz";
+    $("pfChUser").value = "default";
+    $("pfChPw").value = "";
+  },
+};
+
+function removeDataSource(k) {
+  DS_DEFAULTS[k]();
+  dsState.added[k] = false;
+  if (dsState.selected === k) {
+    const other = k === "maria" ? "ch" : "maria";
+    dsState.selected = dsState.added[other] ? other : null;
+  }
+  renderDataSources();
 }
 
 function currentProfile() {
@@ -371,14 +463,13 @@ function resetSessionWork() {
 // 다른 세션의 내용을 물려받지 않는다: 세션마다 자기 작업대가 따로라는 게 눈에 보여야 하고,
 // 다른 서버용으로 짠 날짜·cp가 복사돼 오면 오주입의 씨앗이 된다.
 function defaultScenario() {
-  const y = new Date();
-  y.setDate(y.getDate() - 1);
-  const dt = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`;
+  // 날짜도 비워 둔다 — 채워 주면 시나리오 단계가 시작부터 "완료"로 보이고(스테퍼 체크),
+  // 무엇보다 날짜는 주입 대상의 절반이라 사용자가 직접 고르는 게 맞다.
   return {
     name: "gui",
     checkpointIds: [],
-    startDate: dt,
-    endDate: dt,
+    startDate: "",
+    endDate: "",
     intervalSec: 10,
     driverCode: "numeric_percent",
     seed: 325,
@@ -397,7 +488,8 @@ function defaultScenario() {
 // — 세션별 저장이 없던 시절의 마지막 작업이 "마지막에 쓰던 세션" 소속으로 이관되는 경로.
 let bootActivation = true;
 function activateSession(p) {
-  const changed = (p?.id || "") !== state.profileId;
+  const prevId = state.profileId;
+  const changed = (p?.id || "") !== prevId;
   const isBoot = bootActivation;
   bootActivation = false;
   fillForm(p);
@@ -416,9 +508,21 @@ function activateSession(p) {
     }
   } catch {}
   if (!restored) {
-    if (isBoot) refreshScenarioJson(); // 현재 화면(전역 복원분)을 이 세션 것으로 저장
+    // isBoot: 전역 복원분을 이 세션 것으로 이관. prevId "": 새 세션 초안을 저장한
+    // 직후라 화면 내용(초안 작업대)이 곧 이 세션의 시나리오다. 그 외 = 빈 기본값.
+    if (isBoot || prevId === "") refreshScenarioJson();
     else applyScenario(defaultScenario());
   }
+}
+
+// 새 세션 초안 시작 — 접속 폼·작업 결과·시나리오 전부 빈 상태에서 출발한다.
+// fillForm(null)만 부르면 접속 폼 밖의 것(대상 선택·시나리오·스테퍼 체크)이
+// 이전 세션 것으로 남는다(activateSession 경로가 아니라 리셋을 안 탄다).
+function startNewSessionDraft() {
+  fillForm(null);
+  resetSessionWork();
+  applyScenario(defaultScenario());
+  renderSessionList();
 }
 
 function shortTime(iso) {
@@ -599,8 +703,9 @@ function setSelectValue(id, v) {
 function applyScenario(s) {
   state.scenarioName = s.name || "gui";
   state.selectedCps = new Set((s.checkpointIds || []).map(Number));
-  if (s.startDate) $("startDate").value = s.startDate;
-  if (s.endDate) $("endDate").value = s.endDate;
+  // 무조건 대입 — 빈 값을 건너뛰면 이전 세션의 날짜가 새 작업대에 남는다
+  $("startDate").value = s.startDate || "";
+  $("endDate").value = s.endDate || "";
   setSelectValue("intervalSec", String(s.intervalSec ?? 10));
   setSelectValue("driverCode", s.driverCode || "numeric_percent");
   $("seed").value = s.seed ?? 325;
@@ -1099,8 +1204,7 @@ $("errorClose").addEventListener("click", clearError);
 // 새 세션 = 연결 단계의 작업 — 어느 화면에서 눌러도 입력 폼이 있는 곳으로 데려간다
 $("newProfile").addEventListener("click", () => {
   if (blockDuringRun("새 세션")) return;
-  fillForm(null);
-  renderSessionList();
+  startNewSessionDraft();
   setSection("connections");
   $("pfName").focus();
 });
@@ -1140,6 +1244,44 @@ document.addEventListener("click", () => {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("settingsMenu").hidden) closeSettingsMenu();
 });
+// 데이터 소스 추가 메뉴 — 기어 메뉴와 같은 문법(토글, 바깥 클릭·Esc 닫힘)
+$("dsAddBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = $("dsAddMenu").hidden;
+  $("dsAddMenu").hidden = !open;
+  $("dsAddBtn").setAttribute("aria-expanded", String(open));
+});
+$("dsAddMenu").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const item = e.target.closest(".ds-menu-item");
+  if (!item || item.disabled) return;
+  const k = item.dataset.ds;
+  dsState.added[k] = true;
+  dsState.selected = k;
+  closeDsMenu();
+  renderDataSources();
+  $(DS_META[k].hostId).focus();
+});
+document.addEventListener("click", () => {
+  if (!$("dsAddMenu").hidden) closeDsMenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("dsAddMenu").hidden) closeDsMenu();
+});
+$("dsList").addEventListener("click", (e) => {
+  const row = e.target.closest(".ds-row");
+  if (!row) return;
+  dsState.selected = row.dataset.ds;
+  renderDataSources();
+});
+$("dsRemoveMaria").addEventListener("click", (e) => armThenRun(e.currentTarget, () => removeDataSource("maria")));
+$("dsRemoveCh").addEventListener("click", (e) => armThenRun(e.currentTarget, () => removeDataSource("ch")));
+// 호스트·포트·DB를 고치면 목록 행 요약도 따라간다
+for (const k of ["maria", "ch"]) {
+  for (const id of [DS_META[k].hostId, DS_META[k].portId, DS_META[k].dbId]) {
+    $(id).addEventListener("input", renderDataSources);
+  }
+}
 // 테마 선택 — data-theme 토큰 스위치(head의 부트스트랩 스크립트가 첫 페인트 전 적용)
 $("themeSelect").addEventListener("change", () => {
   const t = $("themeSelect").value;
@@ -1189,6 +1331,7 @@ bindBusy("exportProfiles", async (btn) => {
 function recordConn(id, key, ok) {
   state.connCheck[id] = { ...(state.connCheck[id] || {}), [key]: ok };
   renderSessionList();
+  renderDataSources(); // 데이터 소스 행의 연결 점도 같은 결과를 본다
 }
 bindBusy("testMaria", async () => {
   const saved = await api().SaveProfile(profileFromForm());
@@ -1529,6 +1672,7 @@ function bindRuntimeEvents() {
   makeSortable($("mismatchTable"));
   makeSortable($("e2eCellsTable"));
 
+  renderDataSources();
   updateE2EButtons();
   updateStepStates();
   bindRuntimeEvents();
