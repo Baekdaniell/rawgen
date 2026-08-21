@@ -61,6 +61,7 @@ const e2eState = {
   nextAtRFC: null,
   estEndRFC: null,
   timer: null,
+  pendingNote: null, // 미완료 저장 상태 안내(재개 배너와 동기) — 세션 전환 리셋이 못 지우게 보관
 };
 
 const sectionMeta = {
@@ -302,9 +303,24 @@ async function loadProfiles(selectId) {
   renderSessionList();
 }
 
+// 실행 중 세션 컨텍스트 변경 차단 — 돌고 있는 주입/E2E의 결과(gen:done·e2e:done)가
+// 화면에서 다른 세션 소속으로 표시·집계되는 오귀속을 막는다.
+function blockDuringRun(what) {
+  if (!state.running && !e2eState.running) return false;
+  const code = what.charCodeAt(what.length - 1) - 0xac00;
+  const josa = code >= 0 && code < 11172 && code % 28 > 0 ? "은" : "는";
+  showError(
+    `${what}${josa} 실행 중에는 할 수 없습니다 — ${
+      e2eState.running ? "E2E를 중단(지금까지의 판정은 저장됩니다)" : "주입을 완료/취소"
+    }한 뒤 다시 시도하세요.`,
+  );
+  return true;
+}
+
 // 세션 전환 시 이전 세션의 실행 결과를 그대로 두면 "다른 서버의 결과를 이 세션 것으로
-// 읽는" 오판이 된다(미검증≠통과와 같은 계열). 대상 목록·preview 게이트·verify 결과·
-// 완료 체크는 세션 소속이므로 원위치시킨다. (E2E는 백엔드 상태 파일이 따로 관리 — 여기서 안 건드림)
+// 읽는" 오판이 된다(미검증≠통과와 같은 계열). 화면에 남는 결과 표시물 전부가 대상이다:
+// 대상 목록·스키마 조회·preview 표·주입 로그·재생성 체크리스트·verify 결과·E2E 결과·리포트.
+// (E2E 백엔드 상태 파일은 불변 — 재개 배너가 따로 안내한다)
 function resetSessionWork() {
   state.checkpoints = [];
   renderCheckpointTable();
@@ -313,10 +329,41 @@ function resetSessionWork() {
   state.verifyDone = false;
   state.reportDone = false;
   lastReport = null;
-  invalidatePreview();
+  // 연결: 이전 세션의 스키마 조회·가져오기 결과
+  $("discoverOut").textContent = "세션 저장 후 실행하세요.";
+  $("importResult").textContent = "";
+  // 미리보기: 게이트만 닫으면 표·지표가 이전 세션 숫자로 남는다 — 표시물까지 비운다
+  state.preview = null;
+  for (const id of ["metricRows", "metricDays", "metricWarnings", "metricBatches"]) $(id).textContent = "-";
+  $("previewWarnings").style.display = "none";
+  $("dailyExpected").innerHTML = "";
+  $("hourlyDaySelect").innerHTML = "";
+  $("hourlyPreview").innerHTML = "";
+  $("sampleRows").textContent = "Preview를 실행하세요.";
+  // 주입: 확인 체크·요약·로그·진행바
+  $("genConfirm").checked = false;
+  $("genNaNConfirm").checked = false;
+  $("genSummary").textContent = "Preview를 먼저 실행하세요.";
+  $("genLog").textContent = "";
+  setProgress(0, 1);
+  // 재생성: 남겨두면 이전 세션의 체크리스트가 이 세션의 "완료"로 읽힌다
+  $("checklistText").value = "";
+  // 검증
   $("verifyLayers").innerHTML = '<tr><td colspan="7" class="hint">검증을 실행하면 결과가 표시됩니다.</td></tr>';
   $("verifyBanner").textContent = "";
   $("mismatchRows").innerHTML = '<tr><td colspan="8" class="hint">검증을 실행하면 불일치 표본이 표시됩니다.</td></tr>';
+  // E2E 결과 표시
+  e2eState.hasResult = false;
+  e2eState.filter = null;
+  renderE2ECells([]);
+  $("e2eProblemOnly").classList.remove("active");
+  $("e2eStatus").textContent = e2eState.pendingNote || "대기";
+  $("e2eLog").textContent = "";
+  $("e2ePreflightPanel").style.display = "none";
+  // 리포트
+  $("reportText").value = "Preview/Generate/Verify 후 생성하세요.";
+  updateInsertButton();
+  updateE2EButtons();
   updateStepStates();
 }
 
@@ -412,10 +459,10 @@ function renderSessionList() {
   document.querySelectorAll("#sessionExplorer .sx-item").forEach((el) =>
     el.addEventListener("click", () => {
       const p = state.profiles.find((x) => x.id === el.dataset.id);
-      if (p) {
-        activateSession(p);
-        renderSessionList();
-      }
+      if (!p) return;
+      if (p.id !== state.profileId && blockDuringRun("세션 전환")) return;
+      activateSession(p);
+      renderSessionList();
     }),
   );
 }
@@ -927,6 +974,7 @@ function startCountdown() {
 
 function hideResumeBanner() {
   $("e2eResume").style.display = "none";
+  e2eState.pendingNote = null;
 }
 
 // confirmDiscard는 두 번 눌러야 실행되는 확인이다. 저장 상태를 버리면 되돌릴 수 없고
@@ -955,6 +1003,10 @@ async function checkPendingE2E() {
   if (!st?.exists) return;
   const banner = $("e2eResume");
   banner.style.display = "";
+  // 배너는 E2E 탭 안에만 있다 — 상태 배지로도 알려 다른 탭에서 온 사용자가 놓치지 않게.
+  // (세션 전환 리셋이 배지를 "대기"로 되돌리지 않도록 상태로도 보관)
+  e2eState.pendingNote = "미완료 저장 상태 있음 — 상단 배너에서 이어서/버리기";
+  $("e2eStatus").textContent = e2eState.pendingNote;
   // 대상 DB를 함께 보여준다 — 다른 프로파일로 이어받으면 주입되지 않은 DB에서
   // L1이 불합격하고, 그 중단이 저장된 판정분을 위협한다.
   const target = st.target ? ` · 대상 ${esc(st.target)}` : "";
@@ -1044,9 +1096,13 @@ async function buildReport() {
 document.querySelectorAll(".step").forEach((b) => b.addEventListener("click", () => setSection(b.dataset.section)));
 $("errorClose").addEventListener("click", clearError);
 
+// 새 세션 = 연결 단계의 작업 — 어느 화면에서 눌러도 입력 폼이 있는 곳으로 데려간다
 $("newProfile").addEventListener("click", () => {
+  if (blockDuringRun("새 세션")) return;
   fillForm(null);
   renderSessionList();
+  setSection("connections");
+  $("pfName").focus();
 });
 bindBusy("saveProfile", async () => {
   const saved = await api().SaveProfile(profileFromForm());
@@ -1056,6 +1112,7 @@ $("deleteProfile").addEventListener(
   "click",
   guard(async () => {
     if (!state.profileId) return;
+    if (blockDuringRun("세션 삭제")) return;
     try {
       localStorage.removeItem(scenarioKeyFor(state.profileId));
     } catch {}
@@ -1093,8 +1150,12 @@ $("themeSelect").addEventListener("change", () => {
 });
 bindBusy("dupProfile", async () => {
   if (!state.profileId) throw new Error("복제할 세션을 먼저 고르세요");
+  if (blockDuringRun("복제")) return;
   const copy = await api().DuplicateProfile(state.profileId);
   await loadProfiles(copy.id);
+  // 복제 직후 할 일 = 이름·호스트 고치기 — 그 폼이 있는 연결 단계로
+  setSection("connections");
+  $("pfName").focus();
 }, "복제 중...");
 function showImportSummary(sum) {
   const parts = [];
