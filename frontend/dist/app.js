@@ -6,6 +6,10 @@ const rt = () => window.runtime;
 
 const SCENARIO_STORE_KEY = "rawgen.lastScenario";
 const SCENARIO_STORE_KEY_LEGACY = "sg.lastScenario"; // 개명 전 키 (읽기 전용 폴백)
+// 세션별 작업 내용(시나리오 = 대상 cp·날짜·목표값·오버라이드) 저장 키.
+// 전역 키(lastScenario)는 "마지막 작업" 폴백으로 유지 — 세션 저장분이 없는
+// 세션(구버전 데이터·새 세션)은 지금 화면 내용을 물려받은 뒤 자기 키에 저장된다.
+const scenarioKeyFor = (id) => "rawgen.scenario." + id;
 
 const state = {
   profiles: [],
@@ -266,11 +270,56 @@ function renderSideProfile() {
 
 async function loadProfiles(selectId) {
   state.profiles = (await api().ListProfiles()) || [];
-  const wanted = selectId || state.profileId;
+  // 재시작 시에도 마지막으로 쓰던 세션이 선택돼야 그 작업 내용에서 이어진다
+  let last = "";
+  try {
+    last = localStorage.getItem("rawgen.lastSessionId") || "";
+  } catch {}
+  const wanted = selectId || state.profileId || last;
   const chosen = state.profiles.find((p) => p.id === wanted) || state.profiles[0];
-  if (chosen) fillForm(chosen);
-  else fillForm(null);
+  activateSession(chosen || null);
   renderSessionList();
+}
+
+// 세션 전환 시 이전 세션의 실행 결과를 그대로 두면 "다른 서버의 결과를 이 세션 것으로
+// 읽는" 오판이 된다(미검증≠통과와 같은 계열). 대상 목록·preview 게이트·verify 결과·
+// 완료 체크는 세션 소속이므로 원위치시킨다. (E2E는 백엔드 상태 파일이 따로 관리 — 여기서 안 건드림)
+function resetSessionWork() {
+  state.checkpoints = [];
+  renderCheckpointTable();
+  state.historyLoaded = false;
+  state.lastRunOk = false;
+  state.verifyDone = false;
+  state.reportDone = false;
+  lastReport = null;
+  invalidatePreview();
+  $("verifyLayers").innerHTML = '<tr><td colspan="7" class="hint">검증을 실행하면 결과가 표시됩니다.</td></tr>';
+  $("verifyBanner").textContent = "";
+  $("mismatchRows").innerHTML = '<tr><td colspan="8" class="hint">검증을 실행하면 불일치 표본이 표시됩니다.</td></tr>';
+  updateStepStates();
+}
+
+// 세션 선택의 단일 경로 — 접속 폼을 채우고, 실제로 다른 세션이면 작업 결과를 리셋한 뒤
+// 그 세션의 저장된 시나리오를 복원한다. 저장분이 없으면 지금 화면 내용을 물려받아
+// 즉시 그 세션 키에 저장한다(전환을 오가도 내용이 안정되도록).
+function activateSession(p) {
+  const changed = (p?.id || "") !== state.profileId;
+  fillForm(p);
+  if (!changed) return;
+  resetSessionWork();
+  if (!p?.id) return;
+  try {
+    localStorage.setItem("rawgen.lastSessionId", p.id);
+  } catch {}
+  let restored = false;
+  try {
+    const raw = localStorage.getItem(scenarioKeyFor(p.id));
+    if (raw) {
+      applyScenario(JSON.parse(raw));
+      restored = true;
+    }
+  } catch {}
+  if (!restored) refreshScenarioJson();
 }
 
 function shortTime(iso) {
@@ -312,7 +361,7 @@ function renderSessionList() {
     el.addEventListener("click", () => {
       const p = state.profiles.find((x) => x.id === el.dataset.id);
       if (p) {
-        fillForm(p);
+        activateSession(p);
         renderSessionList();
       }
     }),
@@ -427,7 +476,10 @@ function refreshScenarioJson() {
   $("scenarioJson").textContent = JSON.stringify(s, null, 2);
   invalidatePreviewIfChanged();
   try {
-    localStorage.setItem(SCENARIO_STORE_KEY, JSON.stringify(s));
+    const raw = JSON.stringify(s);
+    localStorage.setItem(SCENARIO_STORE_KEY, raw);
+    // 세션이 선택돼 있으면 그 세션의 작업 내용으로도 저장 — 전환 시 이걸 복원한다
+    if (state.profileId) localStorage.setItem(scenarioKeyFor(state.profileId), raw);
   } catch {}
   updateStepStates();
 }
@@ -952,6 +1004,9 @@ $("deleteProfile").addEventListener(
   "click",
   guard(async () => {
     if (!state.profileId) return;
+    try {
+      localStorage.removeItem(scenarioKeyFor(state.profileId));
+    } catch {}
     await api().DeleteProfile(state.profileId);
     await loadProfiles();
   }),
