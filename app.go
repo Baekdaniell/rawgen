@@ -26,7 +26,7 @@ import (
 	"rawgen/internal/verify"
 )
 
-const appVersion = "0.3.0"
+const appVersion = "0.3.1"
 
 type App struct {
 	ctx    context.Context
@@ -39,13 +39,28 @@ type App struct {
 	// busy는 실행 상호 배타 게이트다: "" | "generate" | "e2e".
 	// E2E 마일스톤 대기 중 Generate로 같은 (cp×날짜)에 추가 INSERT하면 expected가
 	// 깨져 남은 셀이 전부 오염되고, 동시 Verify는 lastVerify를 덮어쓴다.
-	busy       string
-	stopAwake  func()
+	busy      string
+	stopAwake func()
 
 	lastPreview *model.Preview
 	lastRun     *executor.RunResult
 	lastVerify  *verify.Result
 	lastE2E     *e2e.Result
+	// lastOwner는 위 결과들을 만든 세션 ID다. 세션을 바꾸면 화면은 초기화되지만
+	// 이 값들은 앱 전역이라, 소유 세션을 같이 들고 있지 않으면 리포트가 남의 실행을 문다.
+	lastOwner string
+}
+
+// claimOwner는 메모리에 남는 마지막 결과(preview/run/verify/e2e)의 소유 세션을 바꾼다.
+// 세션이 바뀌면 이전 세션의 결과는 버린다 — 남겨두면 리포트가 서로 다른 서버의
+// 미리보기·주입·검증을 한 문서로 합쳐 버린다. 호출자가 a.mu를 잡고 있어야 한다.
+func (a *App) claimOwner(profileID string) {
+	if profileID == "" || a.lastOwner == profileID {
+		a.lastOwner = profileID
+		return
+	}
+	a.lastPreview, a.lastRun, a.lastVerify, a.lastE2E = nil, nil, nil, nil
+	a.lastOwner = profileID
 }
 
 // setBusy는 실행 게이트를 잡는다. 이미 다른 실행이 있으면 에러.
@@ -130,7 +145,10 @@ func (a *App) SaveProfile(p profile.Profile) (profile.Profile, error) {
 }
 
 func mergeTableOverrides(p *profile.Profile, old profile.Profile) {
-	pairs := []struct{ dst *string; src string }{
+	pairs := []struct {
+		dst *string
+		src string
+	}{
 		{&p.CheckvalueTable, old.CheckvalueTable},
 		{&p.DailyStatsCHTable, old.DailyStatsCHTable},
 		{&p.DailyStatsTable, old.DailyStatsTable},
@@ -286,11 +304,20 @@ func (a *App) Discover(profileID string) (*chdb.Discovery, error) {
 // ---------- 대상(checkpoint) ----------
 
 type CheckpointList struct {
-	Items   []mariadb.Checkpoint `json:"items"`
-	Columns []string             `json:"columns"`
+	Items    []mariadb.Checkpoint `json:"items"`
+	Columns  []string             `json:"columns"`
+	Total    int64                `json:"total"`
+	Page     int                  `json:"page"`
+	PageSize int                  `json:"pageSize"`
+	// 스키마에 그 컬럼이 없으면 false — 화면은 해당 필터를 잠그고 "컬럼 없음"으로 표시한다.
+	HasFlag    bool `json:"hasFlag"`
+	HasMonitor bool `json:"hasMonitor"`
+	HasEnabled bool `json:"hasEnabled"`
 }
 
-func (a *App) ListCheckpoints(profileID, search string) (*CheckpointList, error) {
+// ListCheckpoints는 조건(검색어/flag/enable_monitor)과 페이지로 대상 후보를 조회한다.
+// flag/enableMonitor는 ""=전체, "1"/"0"=그 값만. page는 1부터.
+func (a *App) ListCheckpoints(profileID, search, flag, enableMonitor string, page, pageSize int) (*CheckpointList, error) {
 	p, err := a.store.Get(profileID)
 	if err != nil {
 		return nil, err
@@ -302,11 +329,27 @@ func (a *App) ListCheckpoints(profileID, search string) (*CheckpointList, error)
 	defer c.Close()
 	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
 	defer cancel()
-	items, cols, err := c.ListCheckpoints(ctx, search, 100)
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 500 {
+		pageSize = 100
+	}
+	res, err := c.ListCheckpoints(ctx, mariadb.CheckpointFilter{
+		Search:        search,
+		Flag:          flag,
+		EnableMonitor: enableMonitor,
+		Limit:         pageSize,
+		Offset:        (page - 1) * pageSize,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &CheckpointList{Items: items, Columns: cols}, nil
+	return &CheckpointList{
+		Items: res.Items, Columns: res.Columns, Total: res.Total,
+		Page: page, PageSize: pageSize,
+		HasFlag: res.HasFlag, HasMonitor: res.HasMonitor, HasEnabled: res.HasEnabled,
+	}, nil
 }
 
 // ---------- Scenario 파일 ----------
@@ -366,7 +409,9 @@ func guardNaN(s model.Scenario, p profile.Profile, dryRun, allowNaN bool) error 
 
 // ---------- Preview ----------
 
-func (a *App) BuildPreview(scenarioJSON string) (*model.Preview, error) {
+// BuildPreview는 DB에 접근하지 않지만 결과 소유 세션은 기록한다 — 리포트가
+// 어느 세션의 미리보기인지 알아야 남의 결과와 섞이지 않는다.
+func (a *App) BuildPreview(profileID, scenarioJSON string) (*model.Preview, error) {
 	var s model.Scenario
 	if err := json.Unmarshal([]byte(scenarioJSON), &s); err != nil {
 		return nil, fmt.Errorf("시나리오 파싱 실패: %w", err)
@@ -376,6 +421,7 @@ func (a *App) BuildPreview(scenarioJSON string) (*model.Preview, error) {
 		return nil, err
 	}
 	a.mu.Lock()
+	a.claimOwner(profileID)
 	a.lastPreview = p
 	a.mu.Unlock()
 	return p, nil
@@ -418,6 +464,7 @@ func (a *App) Generate(profileID, scenarioJSON string, dryRun, allowNaN bool) er
 			wruntime.EventsEmit(a.ctx, "gen:progress", pr)
 		})
 		a.mu.Lock()
+		a.claimOwner(profileID)
 		a.lastRun = res
 		a.mu.Unlock()
 		if err != nil {
@@ -437,8 +484,56 @@ func (a *App) CancelGenerate() {
 	}
 }
 
-func (a *App) History(limit int) ([]executor.RunResult, error) {
-	return executor.History(limit)
+// HistoryList는 실행 이력 한 화면분이다. 이력 파일은 앱 전체가 한 개를 공유하므로
+// 어느 세션이 실행한 것인지 구분하지 않으면 다른 서버의 주입 기록이 지금 세션의
+// 결과처럼 읽힌다(리포트 버튼까지 붙어 있어 오귀속이 문서로 굳는다).
+type HistoryList struct {
+	Items []executor.RunResult `json:"items"`
+	// Scope: "session"=이 세션 것만, "all"=전체
+	Scope string `json:"scope"`
+	// Hidden: 이 세션 것이 아니어서 숨긴 건수(scope=session일 때만 의미 있음)
+	Hidden      int    `json:"hidden"`
+	SessionName string `json:"sessionName"`
+}
+
+// runBelongsTo는 이력 한 건이 이 세션 것인지 판정한다.
+// ProfileID가 있으면 그것만 믿고, 없는 구 이력(개명 전 기록)만 이름으로 추정한다.
+func runBelongsTo(r executor.RunResult, p profile.Profile) bool {
+	if r.ProfileID != "" {
+		return r.ProfileID == p.ID
+	}
+	return r.Profile != "" && r.Profile == p.Name
+}
+
+// History는 실행 이력을 돌려준다. all=false면 profileID 세션 것만 남긴다.
+// profileID가 비어 있으면(세션 미선택) 필터 기준이 없으므로 전체를 돌려준다.
+func (a *App) History(profileID string, limit int, all bool) (*HistoryList, error) {
+	hist, err := executor.History(0)
+	if err != nil {
+		return nil, err
+	}
+	out := &HistoryList{Scope: "all", Items: []executor.RunResult{}}
+	var p profile.Profile
+	if profileID != "" {
+		if got, gerr := a.store.Get(profileID); gerr == nil {
+			p = got
+			out.SessionName = got.Name
+		}
+	}
+	filter := !all && p.ID != ""
+	if filter {
+		out.Scope = "session"
+	}
+	for _, r := range hist {
+		if filter && !runBelongsTo(r, p) {
+			out.Hidden++
+			continue
+		}
+		if limit <= 0 || len(out.Items) < limit {
+			out.Items = append(out.Items, r)
+		}
+	}
+	return out, nil
 }
 
 // ---------- Regenerate ----------
@@ -485,6 +580,7 @@ func (a *App) RunVerify(profileID, scenarioJSON string, skipL2 bool) (*verify.Re
 	res, err := verify.Run(ctx, p, s, verify.Options{SkipL2: skipL2})
 	if res != nil {
 		a.mu.Lock()
+		a.claimOwner(profileID)
 		a.lastVerify = res
 		a.mu.Unlock()
 	}
@@ -767,6 +863,7 @@ func (a *App) RunE2E(profileID, scenarioJSON, optionsJSON string) error {
 		})
 		if res != nil {
 			a.mu.Lock()
+			a.claimOwner(profileID)
 			a.lastE2E = res
 			if res.Run != nil {
 				a.lastRun = res.Run
@@ -811,12 +908,21 @@ func (a *App) CancelE2E() {
 }
 
 // E2EReport는 마지막 E2E 결과의 Markdown 리포트를 돌려준다.
-func (a *App) E2EReport() (string, error) {
+// E2EReport는 현재 세션(profileID)이 실행한 E2E 결과만 문서화한다.
+func (a *App) E2EReport(profileID string) (string, error) {
 	a.mu.Lock()
 	r := a.lastE2E
+	owner := a.lastOwner
 	a.mu.Unlock()
 	if r == nil {
 		return "", fmt.Errorf("E2E 실행 결과가 없습니다")
+	}
+	if profileID != "" && owner != "" && owner != profileID {
+		name := owner
+		if op, err := a.store.Get(owner); err == nil {
+			name = op.Name
+		}
+		return "", fmt.Errorf("이 E2E 결과는 다른 세션(%s)의 실행분입니다 — 해당 세션으로 전환한 뒤 확인하세요", name)
 	}
 	return e2e.Markdown(r), nil
 }
@@ -829,14 +935,20 @@ type ReportOut struct {
 	CSV      string `json:"csv"`
 }
 
-func (a *App) BuildReport() (*ReportOut, error) {
+// BuildReport는 현재 세션(profileID)의 결과만으로 리포트를 만든다.
+// 메모리에 남은 마지막 결과가 다른 세션 것이면 쓰지 않는다 — 서버가 다른 실행 결과가
+// 이 세션의 문서로 굳는 것이 이력 오귀속보다 더 나쁘다.
+func (a *App) BuildReport(profileID string) (*ReportOut, error) {
 	a.mu.Lock()
-	b := report.Bundle{Preview: a.lastPreview, Run: a.lastRun, Verify: a.lastVerify, Version: appVersion}
+	b := report.Bundle{Version: appVersion}
+	if profileID == "" || a.lastOwner == profileID {
+		b.Preview, b.Run, b.Verify = a.lastPreview, a.lastRun, a.lastVerify
+	}
 	a.mu.Unlock()
-	// 앱 재시작 후에도 최근 주입 리포트가 나오도록 영속 이력으로 폴백
+	// 앱 재시작 후에도 최근 주입 리포트가 나오도록 영속 이력으로 폴백(같은 세션 것만)
 	if b.Run == nil {
-		if hist, err := executor.History(1); err == nil && len(hist) > 0 {
-			b.Run = &hist[0]
+		if hl, err := a.History(profileID, 1, false); err == nil && len(hl.Items) > 0 {
+			b.Run = &hl.Items[0]
 		}
 	}
 	md := report.Markdown(b)

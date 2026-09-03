@@ -4,12 +4,11 @@ import {model} from '../models';
 import {main} from '../models';
 import {chdb} from '../models';
 import {profile} from '../models';
-import {executor} from '../models';
 import {verify} from '../models';
 
-export function BuildPreview(arg1:string):Promise<model.Preview>;
+export function BuildPreview(arg1:string,arg2:string):Promise<model.Preview>;
 
-export function BuildReport():Promise<main.ReportOut>;
+export function BuildReport(arg1:string):Promise<main.ReportOut>;
 
 export function Busy():Promise<string>;
 
@@ -27,7 +26,7 @@ export function DuplicateProfile(arg1:string):Promise<profile.Profile>;
 
 export function E2EPreflight(arg1:string,arg2:string,arg3:boolean,arg4:boolean):Promise<main.PreflightResult>;
 
-export function E2EReport():Promise<string>;
+export function E2EReport(arg1:string):Promise<string>;
 
 export function ExportProfiles():Promise<string>;
 
@@ -35,7 +34,7 @@ export function ExportProfilesFile():Promise<string>;
 
 export function Generate(arg1:string,arg2:string,arg3:boolean,arg4:boolean):Promise<void>;
 
-export function History(arg1:number):Promise<Array<executor.RunResult>>;
+export function History(arg1:string,arg2:number,arg3:boolean):Promise<main.HistoryList>;
 
 export function ImportProfiles(arg1:string):Promise<profile.ImportSummary>;
 
@@ -43,7 +42,7 @@ export function ImportProfilesFile():Promise<profile.ImportSummary>;
 
 export function Info():Promise<main.AppInfo>;
 
-export function ListCheckpoints(arg1:string,arg2:string):Promise<main.CheckpointList>;
+export function ListCheckpoints(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number,arg6:number):Promise<main.CheckpointList>;
 
 export function ListProfiles():Promise<Array<profile.Profile>>;
 

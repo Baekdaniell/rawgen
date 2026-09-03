@@ -93,10 +93,36 @@ func (c *Client) columns(ctx context.Context, table string) ([]string, error) {
 // ---------- checkpoint 조회 ----------
 
 type Checkpoint struct {
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	DriverCode string `json:"driverCode"`
-	Enabled    string `json:"enabled"`
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	DriverCode    string `json:"driverCode"`
+	Enabled       string `json:"enabled"`
+	Flag          string `json:"flag"`
+	EnableMonitor string `json:"enableMonitor"`
+}
+
+// CheckpointFilter는 대상 검색 조건이다.
+// Flag/EnableMonitor는 ""=조건 없음, 그 외에는 그 값과 정확히 일치하는 행만 남긴다
+// (운영에서 의미 있는 대상은 flag=1 AND enable_monitor=1 이라 화면 기본값이 그것이다).
+type CheckpointFilter struct {
+	Search        string
+	Flag          string
+	EnableMonitor string
+	Limit         int
+	Offset        int
+}
+
+// CheckpointPage는 한 페이지분 결과다. Total은 조건에 걸린 전체 건수(페이지 계산용).
+// HasFlag/HasMonitor가 false면 그 컬럼이 이 배포본 스키마에 없다는 뜻이고,
+// 그때는 조건을 걸지 않는다 — 없는 컬럼으로 거른 척하면 "0건"이 조건 결과로 오독된다.
+type CheckpointPage struct {
+	Items      []Checkpoint
+	Columns    []string
+	Total      int64
+	HasFlag    bool
+	HasMonitor bool
+	// HasEnabled=false면 이 스키마엔 enabled류 컬럼이 없다(빈 열을 그리지 않기 위함).
+	HasEnabled bool
 }
 
 func pick(cols []string, candidates ...string) string {
@@ -113,22 +139,41 @@ func pick(cols []string, candidates ...string) string {
 }
 
 // ListCheckpoints는 checkpoint 테이블에서 대상 후보를 조회한다.
-// id/name/driver 컬럼명을 스키마에서 탐지한다(배포본 차이 흡수).
-func (c *Client) ListCheckpoints(ctx context.Context, search string, limit int) ([]Checkpoint, []string, error) {
+// id/name/driver/flag/enable_monitor 컬럼명을 스키마에서 탐지한다(배포본 차이 흡수).
+func (c *Client) ListCheckpoints(ctx context.Context, f CheckpointFilter) (*CheckpointPage, error) {
 	table, err := ident(c.p.CheckpointTable)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	cols, err := c.columns(ctx, table)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s 테이블 조회 실패: %w", table, err)
+		return nil, fmt.Errorf("%s 테이블 조회 실패: %w", table, err)
 	}
+	page := &CheckpointPage{Columns: cols}
 	idCol := pick(cols, "checkpoint_id", "id")
 	nameCol := pick(cols, "name", "checkpoint_name", "display_name", "title")
 	drvCol := pick(cols, "driver_code", "driver", "drivercode")
 	enCol := pick(cols, "enabled", "use_yn", "is_use", "flag", "status")
+	flagCol := pick(cols, "flag")
+	monCol := pick(cols, "enable_monitor", "enablemonitor", "monitor_enable", "monitoring")
+	if enCol == flagCol {
+		enCol = "" // flag는 전용 열로 따로 보여준다 — 같은 값을 두 열에 중복 표시하지 않는다
+	}
 	if idCol == "" {
-		return nil, cols, fmt.Errorf("%s에서 id 컬럼(checkpoint_id/id)을 찾지 못했습니다. 실제 컬럼: %s", table, strings.Join(cols, ", "))
+		return page, fmt.Errorf("%s에서 id 컬럼(checkpoint_id/id)을 찾지 못했습니다. 실제 컬럼: %s", table, strings.Join(cols, ", "))
+	}
+	page.HasFlag = flagCol != ""
+	page.HasMonitor = monCol != ""
+	page.HasEnabled = enCol != ""
+
+	// flag/enable_monitor는 BIT(1)인 배포본이 있다 — 그대로 읽으면 원시 바이트(0x01)가
+	// 그대로 화면에 뜬다. 표시용으로만 숫자로 변환하고(+0), 조건은 원본 컬럼에
+	// 걸어 인덱스를 살린다.
+	num := func(col string) string {
+		if col == "" {
+			return "''"
+		}
+		return "(" + col + " + 0)"
 	}
 	sel := []string{idCol}
 	for _, col := range []string{nameCol, drvCol, enCol} {
@@ -138,42 +183,82 @@ func (c *Client) ListCheckpoints(ctx context.Context, search string, limit int) 
 			sel = append(sel, "''")
 		}
 	}
+	sel = append(sel, num(flagCol), num(monCol))
+
+	// WHERE: 검색어(id 또는 이름)는 OR 묶음, 필터는 AND. 괄호가 없으면
+	// "flag=1 AND id=? OR name LIKE ?"가 되어 필터가 이름 검색에 안 걸린다.
+	var conds []string
+	var args []any
+	if s := strings.TrimSpace(f.Search); s != "" {
+		var or []string
+		if _, err := strconv.ParseInt(s, 10, 64); err == nil {
+			or = append(or, idCol+" = ?")
+			args = append(args, s)
+		}
+		if nameCol != "" {
+			or = append(or, nameCol+" LIKE ?")
+			args = append(args, "%"+s+"%")
+		}
+		if len(or) > 0 {
+			conds = append(conds, "("+strings.Join(or, " OR ")+")")
+		}
+	}
+	// 조건 값은 숫자로 넘긴다 — BIT 컬럼에 문자열 '1'을 비교하면 배포본에 따라
+	// 변환 규칙이 달라 "조건을 걸었는데 안 걸린" 결과가 나올 수 있다.
+	addNumCond := func(col, val string) error {
+		if col == "" || val == "" {
+			return nil
+		}
+		n, err := strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return fmt.Errorf("조건 값 %q는 숫자가 아닙니다", val)
+		}
+		conds = append(conds, col+" = ?")
+		args = append(args, n)
+		return nil
+	}
+	if err := addNumCond(flagCol, f.Flag); err != nil {
+		return page, err
+	}
+	if err := addNumCond(monCol, f.EnableMonitor); err != nil {
+		return page, err
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	limit := f.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	q := fmt.Sprintf("SELECT %s FROM %s", strings.Join(sel, ", "), table)
-	var args []any
-	if search != "" {
-		conds := []string{}
-		if _, err := strconv.ParseInt(search, 10, 64); err == nil {
-			conds = append(conds, idCol+" = ?")
-			args = append(args, search)
-		}
-		if nameCol != "" {
-			conds = append(conds, nameCol+" LIKE ?")
-			args = append(args, "%"+search+"%")
-		}
-		if len(conds) > 0 {
-			q += " WHERE " + strings.Join(conds, " OR ")
-		}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
 	}
-	q += fmt.Sprintf(" ORDER BY %s LIMIT %d", idCol, limit)
 
+	if err := c.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table+where, args...).Scan(&page.Total); err != nil {
+		return page, err
+	}
+	q := fmt.Sprintf("SELECT %s FROM %s%s ORDER BY %s LIMIT %d OFFSET %d",
+		strings.Join(sel, ", "), table, where, idCol, limit, offset)
 	rows, err := c.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, cols, err
+		return page, err
 	}
 	defer rows.Close()
-	var out []Checkpoint
 	for rows.Next() {
 		var id int64
-		var name, drv, en sql.NullString
-		if err := rows.Scan(&id, &name, &drv, &en); err != nil {
-			return nil, cols, err
+		var name, drv, en, flag, mon sql.NullString
+		if err := rows.Scan(&id, &name, &drv, &en, &flag, &mon); err != nil {
+			return page, err
 		}
-		out = append(out, Checkpoint{ID: id, Name: name.String, DriverCode: drv.String, Enabled: en.String})
+		page.Items = append(page.Items, Checkpoint{
+			ID: id, Name: name.String, DriverCode: drv.String, Enabled: en.String,
+			Flag: flag.String, EnableMonitor: mon.String,
+		})
 	}
-	return out, cols, rows.Err()
+	return page, rows.Err()
 }
 
 // ---------- 제품 통계 조회 ----------
@@ -181,14 +266,14 @@ func (c *Client) ListCheckpoints(ctx context.Context, search string, limit int) 
 // DailyRow는 MariaDB daily_stats 한 행이다.
 // Hour* 맵의 키는 CH hour H (0~23) — 컬럼 _NN(종료 라벨)에서 H=NN-1로 역매핑해 담는다.
 type DailyRow struct {
-	CheckpointID int64
-	Date         string
-	Min, Max, Avg  *float64 // 일별 대푯값
-	MaxTimeMs      *int64   // epoch ms (해석 실패 시 nil, 원문은 MaxTimeRaw)
-	MaxTimeRaw     string   // 해석하지 못한 max_time 원문(진단용)
-	HourMin        map[int]*float64
-	HourMax        map[int]*float64
-	HourAvg        map[int]*float64
+	CheckpointID  int64
+	Date          string
+	Min, Max, Avg *float64 // 일별 대푯값
+	MaxTimeMs     *int64   // epoch ms (해석 실패 시 nil, 원문은 MaxTimeRaw)
+	MaxTimeRaw    string   // 해석하지 못한 max_time 원문(진단용)
+	HourMin       map[int]*float64
+	HourMax       map[int]*float64
+	HourAvg       map[int]*float64
 }
 
 var hourColRe = regexp.MustCompile(`^(min|max|avg)_value_(\d{2})$`)
@@ -309,10 +394,10 @@ func (c *Client) DailyStats(ctx context.Context, cp int64, date string) (*DailyR
 
 // HourlyRow는 hourly_checkpoint_data_log 한 행이다. hour = 시작 라벨(H↔H, daily와 반대).
 type HourlyRow struct {
-	Hour      int
+	Hour          int
 	Min, Max, Avg *float64
-	MaxTimeMs *int64 // epoch ms (해석 실패 시 nil, 원문은 MaxTimeRaw)
-	MaxTimeRaw string
+	MaxTimeMs     *int64 // epoch ms (해석 실패 시 nil, 원문은 MaxTimeRaw)
+	MaxTimeRaw    string
 }
 
 func (c *Client) HourlyStats(ctx context.Context, cp int64, date string) ([]HourlyRow, error) {

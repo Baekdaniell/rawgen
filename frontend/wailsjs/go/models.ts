@@ -117,6 +117,7 @@ export namespace executor {
 	export class RunResult {
 	    runId: string;
 	    profile: string;
+	    profileId: string;
 	    startedAt: string;
 	    finishedAt: string;
 	    dryRun: boolean;
@@ -134,6 +135,7 @@ export namespace executor {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
 	        this.profile = source["profile"];
+	        this.profileId = source["profileId"];
 	        this.startedAt = source["startedAt"];
 	        this.finishedAt = source["finishedAt"];
 	        this.dryRun = source["dryRun"];
@@ -184,6 +186,12 @@ export namespace main {
 	export class CheckpointList {
 	    items: mariadb.Checkpoint[];
 	    columns: string[];
+	    total: number;
+	    page: number;
+	    pageSize: number;
+	    hasFlag: boolean;
+	    hasMonitor: boolean;
+	    hasEnabled: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new CheckpointList(source);
@@ -193,6 +201,48 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.items = this.convertValues(source["items"], mariadb.Checkpoint);
 	        this.columns = source["columns"];
+	        this.total = source["total"];
+	        this.page = source["page"];
+	        this.pageSize = source["pageSize"];
+	        this.hasFlag = source["hasFlag"];
+	        this.hasMonitor = source["hasMonitor"];
+	        this.hasEnabled = source["hasEnabled"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class HistoryList {
+	    items: executor.RunResult[];
+	    scope: string;
+	    hidden: number;
+	    sessionName: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new HistoryList(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], executor.RunResult);
+	        this.scope = source["scope"];
+	        this.hidden = source["hidden"];
+	        this.sessionName = source["sessionName"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -363,6 +413,8 @@ export namespace mariadb {
 	    name: string;
 	    driverCode: string;
 	    enabled: string;
+	    flag: string;
+	    enableMonitor: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Checkpoint(source);
@@ -374,6 +426,8 @@ export namespace mariadb {
 	        this.name = source["name"];
 	        this.driverCode = source["driverCode"];
 	        this.enabled = source["enabled"];
+	        this.flag = source["flag"];
+	        this.enableMonitor = source["enableMonitor"];
 	    }
 	}
 

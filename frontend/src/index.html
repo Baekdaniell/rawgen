@@ -224,17 +224,45 @@
             <div class="panel-header">
               <h3>Checkpoint 검색</h3>
               <div class="top-actions">
+                <label class="filter-field">flag
+                  <select id="cpFlag">
+                    <option value="1" selected>1</option>
+                    <option value="0">0</option>
+                    <option value="">전체</option>
+                  </select>
+                </label>
+                <label class="filter-field">enable_monitor
+                  <select id="cpMonitor">
+                    <option value="1" selected>1</option>
+                    <option value="0">0</option>
+                    <option value="">전체</option>
+                  </select>
+                </label>
                 <input id="cpSearch" type="text" placeholder="id 또는 이름 (Enter로 조회)" style="width: 220px" />
                 <button id="cpLoad" class="secondary small">조회</button>
               </div>
             </div>
+            <p class="hint" id="cpFilterNote">기본 조건은 flag=1 · enable_monitor=1 입니다(운영 중인 대상). 조건을 바꾼 뒤 조회하세요.</p>
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th style="width:60px">선택</th><th>id</th><th>이름</th><th>driver</th><th>enabled</th></tr>
+                  <tr><th style="width:60px">선택</th><th style="width:110px">id</th><th>이름</th><th>driver</th><th style="width:90px" id="thEnabled">enabled</th><th style="width:70px">flag</th><th style="width:130px">enable_monitor</th></tr>
                 </thead>
-                <tbody id="cpRows"><tr><td colspan="5" class="hint">세션을 고르고 조회하세요.</td></tr></tbody>
+                <tbody id="cpRows"><tr><td colspan="7" class="hint">세션을 고르고 조회하세요.</td></tr></tbody>
               </table>
+            </div>
+            <div class="pager">
+              <span class="pager-info" id="cpPageInfo">-</span>
+              <div class="pager-nav" id="cpPager"></div>
+              <label class="filter-field">표시 개수
+                <select id="cpPageSize">
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100" selected>100</option>
+                  <option value="200">200</option>
+                  <option value="500">500</option>
+                </select>
+              </label>
             </div>
           </article>
 
@@ -416,12 +444,16 @@
           <article class="panel">
             <div class="panel-header">
               <h3>실행 이력</h3>
-              <button id="loadHistory" class="secondary small">불러오기</button>
+              <div class="top-actions">
+                <button id="historyScope" class="secondary small">전체 세션 보기</button>
+                <button id="loadHistory" class="secondary small">불러오기</button>
+              </div>
             </div>
+            <p class="hint" id="historyNote">주입 탭에 들어오면 현재 세션의 이력을 불러옵니다.</p>
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>run_id</th><th>profile</th><th>dry</th><th>rows</th><th>일자별 결과</th><th></th></tr>
+                  <tr><th>run_id</th><th>세션</th><th>dry</th><th>rows</th><th>일자별 결과</th><th style="width:80px"></th></tr>
                 </thead>
                 <tbody id="historyRows"><tr><td colspan="6" class="hint">주입 탭에 들어오면 자동으로 불러옵니다.</td></tr></tbody>
               </table>

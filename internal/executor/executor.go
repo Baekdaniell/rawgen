@@ -31,15 +31,19 @@ type DayResult struct {
 }
 
 type RunResult struct {
-	RunID      string      `json:"runId"`
-	Profile    string      `json:"profile"`
-	StartedAt  string      `json:"startedAt"`
-	FinishedAt string      `json:"finishedAt"`
-	DryRun     bool        `json:"dryRun"`
-	Days       []DayResult `json:"days"`
-	TotalRows  int64       `json:"totalRows"`
-	Canceled   bool        `json:"canceled"`
-	Error      string      `json:"error,omitempty"`
+	RunID string `json:"runId"`
+	// Profile은 표시용 세션 이름, ProfileID는 귀속 근거다.
+	// 이름은 바뀌고 겹칠 수 있어 이력 필터의 기준이 될 수 없다
+	// (구 이력에는 ProfileID가 없어 "" — 그때만 이름으로 추정한다).
+	Profile    string         `json:"profile"`
+	ProfileID  string         `json:"profileId"`
+	StartedAt  string         `json:"startedAt"`
+	FinishedAt string         `json:"finishedAt"`
+	DryRun     bool           `json:"dryRun"`
+	Days       []DayResult    `json:"days"`
+	TotalRows  int64          `json:"totalRows"`
+	Canceled   bool           `json:"canceled"`
+	Error      string         `json:"error,omitempty"`
 	Scenario   model.Scenario `json:"scenario"`
 }
 
@@ -57,6 +61,7 @@ func Run(ctx context.Context, p profile.Profile, s model.Scenario, dryRun bool, 
 	res := &RunResult{
 		RunID:     fmt.Sprintf("run-%s", time.Now().Format("20060102-150405")),
 		Profile:   p.Name,
+		ProfileID: p.ID,
 		StartedAt: time.Now().Format(time.RFC3339),
 		DryRun:    dryRun,
 		Scenario:  s,

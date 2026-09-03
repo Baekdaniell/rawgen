@@ -724,6 +724,76 @@ button {
 .top-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+/* 툴바 안의 조건 입력 — 전역 label은 세로 grid라 가로형이 따로 필요하다 */
+.filter-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.filter-field select {
+  width: auto;
+  min-width: 62px;
+}
+
+.filter-field select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 표 하단 페이지 이동 */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.pager-info {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pager-nav {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.pager-nav button {
+  min-width: 28px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  background: var(--btn2);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+}
+
+.pager-nav button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pager-nav button.current {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.pager-gap {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 2px;
 }
 
 .section {

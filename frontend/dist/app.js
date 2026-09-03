@@ -39,6 +39,15 @@ const state = {
   // 세션이 여러 개면 "어느 것이 지금 살아 있는 서버인지"를 목록에서 바로 봐야 한다.
   connCheck: {},
   checkpoints: [],
+  // 대상 검색 상태 — 조회한 조건/페이지를 기억해야 페이지 이동이 같은 조건으로 간다.
+  cpQuery: { search: "", flag: "1", monitor: "1" },
+  cpPage: 1,
+  cpPageSize: 100,
+  cpTotal: 0,
+  cpLoaded: false,
+  cpHasFlag: true,
+  cpHasMonitor: true,
+  cpHasEnabled: true,
   selectedCps: new Set(),
   scenarioName: "gui",
   overrides: [
@@ -48,6 +57,7 @@ const state = {
   preview: null,
   running: false, // Generate 실행 중
   historyLoaded: false,
+  historyAll: false, // 실행 이력 범위: false=현재 세션만, true=전체 세션
   lastRunOk: false,
   verifyDone: false,
   reportDone: false,
@@ -415,8 +425,15 @@ function blockDuringRun(what) {
 // (E2E 백엔드 상태 파일은 불변 — 재개 배너가 따로 안내한다)
 function resetSessionWork() {
   state.checkpoints = [];
+  // 다른 서버의 조회 결과가 페이지 표시로 남으면 안 된다
+  state.cpTotal = 0;
+  state.cpPage = 1;
+  state.cpLoaded = false;
   renderCheckpointTable();
   state.historyLoaded = false;
+  // 이전 세션의 실행 이력이 남아 있으면 이 세션이 주입한 것으로 읽힌다
+  $("historyRows").innerHTML = '<tr><td colspan="6" class="hint">주입 탭에 들어오면 자동으로 불러옵니다.</td></tr>';
+  $("historyNote").textContent = "주입 탭에 들어오면 현재 세션의 이력을 불러옵니다.";
   state.lastRunOk = false;
   state.verifyDone = false;
   state.reportDone = false;
@@ -457,6 +474,11 @@ function resetSessionWork() {
   updateInsertButton();
   updateE2EButtons();
   updateStepStates();
+  // 주입 화면을 열어 둔 채 세션을 바꿨으면 그 자리에서 새 세션 이력으로 갈아 끼운다
+  // (다음 진입까지 빈 표로 두면 "이 세션은 주입한 적 없음"으로 읽힌다)
+  if (state.profileId && api() && $("generate").classList.contains("active")) {
+    loadHistory().catch(() => {});
+  }
 }
 
 // 저장된 작업이 없는 세션의 초기 상태 — 부팅 기본값과 같은 빈 시나리오.
@@ -586,16 +608,62 @@ function renderSelectedCps() {
 }
 
 function renderCheckpointTable() {
+  // enabled류 컬럼이 없는 스키마(제품 checkpoint 테이블)에서는 빈 열을 그리지 않는다
+  const showEnabled = state.cpHasEnabled;
+  $("thEnabled").style.display = showEnabled ? "" : "none";
+  const cols = showEnabled ? 7 : 6;
   $("cpRows").innerHTML = state.checkpoints.length
     ? state.checkpoints
         .map(
           (cp) => `<tr>
             <td><input type="checkbox" data-cp="${cp.id}" ${state.selectedCps.has(cp.id) ? "checked" : ""} /></td>
-            <td>${cp.id}</td><td>${esc(cp.name)}</td><td>${esc(cp.driverCode)}</td><td>${esc(cp.enabled)}</td>
+            <td>${cp.id}</td><td>${esc(cp.name)}</td><td>${esc(cp.driverCode)}</td>${showEnabled ? `<td>${esc(cp.enabled)}</td>` : ""}
+            <td>${esc(cp.flag)}</td><td>${esc(cp.enableMonitor)}</td>
           </tr>`,
         )
         .join("")
-    : '<tr><td colspan="5" class="hint">결과 없음</td></tr>';
+    : `<tr><td colspan="${cols}" class="hint">${state.cpLoaded ? "조건에 맞는 checkpoint가 없습니다." : "세션을 고르고 조회하세요."}</td></tr>`;
+  renderCheckpointPager();
+}
+
+// 페이지 번호 목록 — 현재 페이지 주변 5개 + 처음/끝(생략은 …)
+function pageWindow(page, last) {
+  const out = new Set([1, last]);
+  for (let p = page - 2; p <= page + 2; p++) if (p >= 1 && p <= last) out.add(p);
+  return [...out].sort((a, b) => a - b);
+}
+
+function renderCheckpointPager() {
+  const info = $("cpPageInfo");
+  const nav = $("cpPager");
+  if (!state.cpLoaded) {
+    info.textContent = "-";
+    nav.innerHTML = "";
+    return;
+  }
+  const size = state.cpPageSize;
+  const last = Math.max(1, Math.ceil(state.cpTotal / size));
+  const page = Math.min(state.cpPage, last);
+  const from = state.cpTotal === 0 ? 0 : (page - 1) * size + 1;
+  const to = Math.min(page * size, state.cpTotal);
+  const cond = [];
+  if (state.cpHasFlag && state.cpQuery.flag !== "") cond.push(`flag=${state.cpQuery.flag}`);
+  if (state.cpHasMonitor && state.cpQuery.monitor !== "") cond.push(`enable_monitor=${state.cpQuery.monitor}`);
+  if (state.cpQuery.search) cond.push(`검색="${state.cpQuery.search}"`);
+  info.textContent =
+    `총 ${state.cpTotal.toLocaleString()}건 중 ${from.toLocaleString()}~${to.toLocaleString()} (${page}/${last} 페이지)` +
+    (cond.length ? ` · 조건: ${cond.join(", ")}` : " · 조건: 전체");
+  const btn = (label, target, opts = {}) =>
+    `<button data-cp-page="${target}" ${opts.disabled ? "disabled" : ""} ${opts.current ? 'class="current"' : ""}>${label}</button>`;
+  const parts = [btn("«", 1, { disabled: page <= 1 }), btn("‹", page - 1, { disabled: page <= 1 })];
+  let prev = 0;
+  for (const p of pageWindow(page, last)) {
+    if (prev && p - prev > 1) parts.push('<span class="pager-gap">…</span>');
+    parts.push(btn(String(p), p, { current: p === page }));
+    prev = p;
+  }
+  parts.push(btn("›", page + 1, { disabled: page >= last }), btn("»", last, { disabled: page >= last }));
+  nav.innerHTML = parts.join("");
 }
 
 // ---------- Scenario ----------
@@ -879,20 +947,34 @@ function renderRunResult(res) {
   }
 }
 
+// 실행 이력 파일은 앱 하나에 하나뿐이라 전 세션의 주입 기록이 섞여 있다.
+// 기본은 현재 세션 것만 — 다른 서버의 주입이 이 세션의 결과로 읽히면 안 된다.
 async function loadHistory() {
-  const list = (await api().History(20)) || [];
+  const res = (await api().History(state.profileId, 20, state.historyAll)) || {};
+  const list = res.items || [];
   state.historyLoaded = true;
+  $("historyScope").textContent = state.historyAll ? "이 세션만 보기" : "전체 세션 보기";
+  const note = [];
+  if (res.scope === "session") {
+    note.push(`현재 세션${res.sessionName ? ` "${res.sessionName}"` : ""}의 실행 이력입니다.`);
+    if (res.hidden) note.push(`다른 세션 이력 ${res.hidden}건은 숨겼습니다.`);
+  } else {
+    note.push(state.profileId ? "전체 세션의 실행 이력입니다 — 세션 열을 확인하세요." : "세션을 먼저 고르면 그 세션의 이력만 보여줍니다.");
+  }
+  $("historyNote").textContent = note.join(" ");
   $("historyRows").innerHTML = list.length
     ? list
         .map((r) => {
           const days = (r.days || [])
             .map((d) => `${d.date}/cp${d.checkpointId}:${d.readbackOk ? "OK" : "FAIL"}`)
             .join(" ");
-          return `<tr><td>${esc(r.runId)}</td><td>${esc(r.profile)}</td><td>${r.dryRun}</td><td>${r.totalRows}</td><td>${esc(days)}</td>
+          // profileId가 없는 건은 세션 ID 도입 전 기록 — 이름으로 추정해 붙인 것이라 표시해 둔다
+          const who = esc(r.profile) + (r.profileId ? "" : ' <span class="hint">(구 이력·이름 추정)</span>');
+          return `<tr><td>${esc(r.runId)}</td><td>${who}</td><td>${r.dryRun}</td><td>${r.totalRows}</td><td>${esc(days)}</td>
             <td><button class="secondary small" data-report-run="${esc(r.runId)}">리포트</button></td></tr>`;
         })
         .join("")
-    : '<tr><td colspan="6" class="hint">이력 없음</td></tr>';
+    : `<tr><td colspan="6" class="hint">${res.hidden ? "이 세션의 이력이 없습니다 (다른 세션 " + res.hidden + "건은 '전체 세션 보기'로)" : "이력 없음"}</td></tr>`;
 }
 
 // ---------- Verify ----------
@@ -1190,7 +1272,7 @@ async function startE2E(resume = false) {
 let lastReport = null;
 
 async function buildReport() {
-  lastReport = await api().BuildReport();
+  lastReport = await api().BuildReport(state.profileId);
   $("reportText").value = lastReport.markdown;
   state.reportDone = true;
   updateStepStates();
@@ -1367,14 +1449,70 @@ bindBusy("discover", async () => {
   $("discoverOut").textContent = lines.join("\n");
 }, "확인 중...");
 
-bindBusy("cpLoad", async () => {
-  const res = await api().ListCheckpoints(state.profileId, $("cpSearch").value.trim());
+// page를 명시하면 그 페이지로, 없으면 지금 화면 조건을 새로 읽어 1페이지부터.
+async function loadCheckpoints(page) {
+  if (page == null) {
+    state.cpQuery = {
+      search: $("cpSearch").value.trim(),
+      flag: $("cpFlag").value,
+      monitor: $("cpMonitor").value,
+    };
+    page = 1;
+  }
+  state.cpPageSize = Number($("cpPageSize").value) || 100;
+  const q = state.cpQuery;
+  const res = await api().ListCheckpoints(state.profileId, q.search, q.flag, q.monitor, page, state.cpPageSize);
   state.checkpoints = res.items || [];
+  state.cpTotal = res.total || 0;
+  state.cpPage = res.page || page;
+  state.cpPageSize = res.pageSize || state.cpPageSize;
+  state.cpHasFlag = !!res.hasFlag;
+  state.cpHasMonitor = !!res.hasMonitor;
+  state.cpHasEnabled = !!res.hasEnabled;
+  state.cpLoaded = true;
+  // 스키마에 없는 컬럼으로는 거르지 않는다 — 잠가서 "안 걸렸다"를 보이게 한다.
+  applyCpFilterAvailability();
   renderCheckpointTable();
+}
+
+function applyCpFilterAvailability() {
+  const missing = [];
+  $("cpFlag").disabled = !state.cpHasFlag;
+  $("cpMonitor").disabled = !state.cpHasMonitor;
+  if (!state.cpHasFlag) missing.push("flag");
+  if (!state.cpHasMonitor) missing.push("enable_monitor");
+  $("cpFilterNote").textContent = missing.length
+    ? `이 DB의 checkpoint 테이블에 ${missing.join(", ")} 컬럼이 없어 해당 조건은 적용되지 않았습니다.`
+    : "기본 조건은 flag=1 · enable_monitor=1 입니다(운영 중인 대상). 조건을 바꾼 뒤 조회하세요.";
+}
+
+bindBusy("cpLoad", async () => {
+  await loadCheckpoints();
 }, "조회 중...");
 $("cpSearch").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("cpLoad").click();
 });
+for (const id of ["cpFlag", "cpMonitor"]) {
+  $(id).addEventListener("change", () => {
+    if (state.cpLoaded) $("cpLoad").click();
+  });
+}
+$("cpPageSize").addEventListener(
+  "change",
+  guard(async () => {
+    if (state.cpLoaded) await loadCheckpoints(1);
+  }),
+);
+$("cpPager").addEventListener(
+  "click",
+  guard(async (e) => {
+    const btn = e.target.closest("button[data-cp-page]");
+    if (!btn || btn.disabled) return;
+    const target = Number(btn.dataset.cpPage);
+    if (target === state.cpPage) return;
+    await loadCheckpoints(target);
+  }),
+);
 $("cpRows").addEventListener("change", (e) => {
   const id = Number(e.target.dataset.cp);
   if (!id) return;
@@ -1463,7 +1601,7 @@ bindBusy("scnSave", async () => {
 });
 
 bindBusy("runPreview", async () => {
-  const pv = await api().BuildPreview(JSON.stringify(buildScenario()));
+  const pv = await api().BuildPreview(state.profileId, JSON.stringify(buildScenario()));
   renderPreview(pv);
 }, "계산 중...");
 $("hourlyDaySelect").addEventListener("change", () => renderHourly(Number($("hourlyDaySelect").value)));
@@ -1481,6 +1619,21 @@ $("cancelRun").addEventListener(
   }),
 );
 bindBusy("loadHistory", loadHistory, "불러오는 중...");
+// bindBusy는 끝나면 라벨을 원래대로 되돌린다 — 라벨 자체가 토글 상태인 버튼에는 못 쓴다
+$("historyScope").addEventListener(
+  "click",
+  guard(async () => {
+    const btn = $("historyScope");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+      state.historyAll = !state.historyAll;
+      await loadHistory();
+    } finally {
+      btn.disabled = false;
+    }
+  }),
+);
 $("historyRows").addEventListener(
   "click",
   guard(async (e) => {
@@ -1528,7 +1681,7 @@ $("e2eCancel").addEventListener(
   }),
 );
 bindBusy("e2eSaveMd", async () => {
-  const md = await api().E2EReport();
+  const md = await api().E2EReport(state.profileId);
   await api().SaveReportFile(md, "rawgen-e2e-report.md");
 });
 $("e2eChips").addEventListener("click", (e) => {

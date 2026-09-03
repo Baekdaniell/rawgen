@@ -13,7 +13,7 @@
   "info": {
     "companyName": "",
     "productName": "rawgen",
-    "productVersion": "0.3.0",
+    "productVersion": "0.3.1",
     "copyright": "Copyright 2026",
     "comments": "MK119 stats verification raw data generator (OQT-325)"
   }
