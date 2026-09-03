@@ -138,6 +138,55 @@ func pick(cols []string, candidates ...string) string {
 	return ""
 }
 
+// checkpointWhere는 검색 조건을 WHERE 절로 만든다(목록·전체 id 조회가 같은 규칙을 쓴다).
+// 🔑 검색어(id 또는 이름)는 OR 묶음이라 반드시 괄호로 싸야 한다 — 없으면
+// "flag=1 AND id=? OR name LIKE ?"가 되어 이름 검색 갈래에 필터가 안 걸린다.
+// 🔑 flag/enable_monitor 값은 숫자로 넘긴다 — BIT 컬럼에 문자열 '1'을 비교하면
+// 배포본마다 변환 규칙이 달라 "조건을 걸었는데 안 걸린" 결과가 나올 수 있다.
+func (c *Client) checkpointWhere(cols []string, idCol string, f CheckpointFilter) (string, []any, error) {
+	nameCol := pick(cols, "name", "checkpoint_name", "display_name", "title")
+	flagCol := pick(cols, "flag")
+	monCol := pick(cols, "enable_monitor", "enablemonitor", "monitor_enable", "monitoring")
+	var conds []string
+	var args []any
+	if s := strings.TrimSpace(f.Search); s != "" {
+		var or []string
+		if _, err := strconv.ParseInt(s, 10, 64); err == nil {
+			or = append(or, idCol+" = ?")
+			args = append(args, s)
+		}
+		if nameCol != "" {
+			or = append(or, nameCol+" LIKE ?")
+			args = append(args, "%"+s+"%")
+		}
+		if len(or) > 0 {
+			conds = append(conds, "("+strings.Join(or, " OR ")+")")
+		}
+	}
+	addNumCond := func(col, val string) error {
+		if col == "" || val == "" {
+			return nil
+		}
+		n, err := strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return fmt.Errorf("조건 값 %q는 숫자가 아닙니다", val)
+		}
+		conds = append(conds, col+" = ?")
+		args = append(args, n)
+		return nil
+	}
+	if err := addNumCond(flagCol, f.Flag); err != nil {
+		return "", nil, err
+	}
+	if err := addNumCond(monCol, f.EnableMonitor); err != nil {
+		return "", nil, err
+	}
+	if len(conds) == 0 {
+		return "", nil, nil
+	}
+	return " WHERE " + strings.Join(conds, " AND "), args, nil
+}
+
 // ListCheckpoints는 checkpoint 테이블에서 대상 후보를 조회한다.
 // id/name/driver/flag/enable_monitor 컬럼명을 스키마에서 탐지한다(배포본 차이 흡수).
 func (c *Client) ListCheckpoints(ctx context.Context, f CheckpointFilter) (*CheckpointPage, error) {
@@ -185,47 +234,9 @@ func (c *Client) ListCheckpoints(ctx context.Context, f CheckpointFilter) (*Chec
 	}
 	sel = append(sel, num(flagCol), num(monCol))
 
-	// WHERE: 검색어(id 또는 이름)는 OR 묶음, 필터는 AND. 괄호가 없으면
-	// "flag=1 AND id=? OR name LIKE ?"가 되어 필터가 이름 검색에 안 걸린다.
-	var conds []string
-	var args []any
-	if s := strings.TrimSpace(f.Search); s != "" {
-		var or []string
-		if _, err := strconv.ParseInt(s, 10, 64); err == nil {
-			or = append(or, idCol+" = ?")
-			args = append(args, s)
-		}
-		if nameCol != "" {
-			or = append(or, nameCol+" LIKE ?")
-			args = append(args, "%"+s+"%")
-		}
-		if len(or) > 0 {
-			conds = append(conds, "("+strings.Join(or, " OR ")+")")
-		}
-	}
-	// 조건 값은 숫자로 넘긴다 — BIT 컬럼에 문자열 '1'을 비교하면 배포본에 따라
-	// 변환 규칙이 달라 "조건을 걸었는데 안 걸린" 결과가 나올 수 있다.
-	addNumCond := func(col, val string) error {
-		if col == "" || val == "" {
-			return nil
-		}
-		n, err := strconv.ParseInt(val, 10, 64)
-		if err != nil {
-			return fmt.Errorf("조건 값 %q는 숫자가 아닙니다", val)
-		}
-		conds = append(conds, col+" = ?")
-		args = append(args, n)
-		return nil
-	}
-	if err := addNumCond(flagCol, f.Flag); err != nil {
+	where, args, err := c.checkpointWhere(cols, idCol, f)
+	if err != nil {
 		return page, err
-	}
-	if err := addNumCond(monCol, f.EnableMonitor); err != nil {
-		return page, err
-	}
-	where := ""
-	if len(conds) > 0 {
-		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 
 	limit := f.Limit
@@ -259,6 +270,56 @@ func (c *Client) ListCheckpoints(ctx context.Context, f CheckpointFilter) (*Chec
 		})
 	}
 	return page, rows.Err()
+}
+
+// ListCheckpointIDs는 같은 조건에 걸리는 checkpoint id 전체를 돌려준다("조회 결과 전체 선택"용).
+// 화면 한 페이지가 아니라 조건 전체가 대상이므로 상한(max)을 둔다 — 넘으면 조건을 좁히게 한다
+// (수만 개 cp를 한 번에 고르면 주입량이 통제 밖이고, 칩 렌더링도 무의미해진다).
+func (c *Client) ListCheckpointIDs(ctx context.Context, f CheckpointFilter, max int) ([]int64, int64, error) {
+	page, err := c.ListCheckpoints(ctx, CheckpointFilter{
+		Search: f.Search, Flag: f.Flag, EnableMonitor: f.EnableMonitor, Limit: 1,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if max <= 0 {
+		max = 20000
+	}
+	if page.Total > int64(max) {
+		return nil, page.Total, fmt.Errorf("조건에 걸린 대상이 %d건입니다 — 한 번에 고를 수 있는 상한(%d건)을 넘었습니다. 조건이나 검색어로 범위를 좁히세요", page.Total, max)
+	}
+
+	table, err := ident(c.p.CheckpointTable)
+	if err != nil {
+		return nil, 0, err
+	}
+	cols, err := c.columns(ctx, table)
+	if err != nil {
+		return nil, 0, err
+	}
+	idCol := pick(cols, "checkpoint_id", "id")
+	if idCol == "" {
+		return nil, 0, fmt.Errorf("%s에서 id 컬럼을 찾지 못했습니다", table)
+	}
+	where, args, err := c.checkpointWhere(cols, idCol, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := c.db.QueryContext(ctx,
+		fmt.Sprintf("SELECT %s FROM %s%s ORDER BY %s", idCol, table, where, idCol), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, id)
+	}
+	return out, page.Total, rows.Err()
 }
 
 // ---------- 제품 통계 조회 ----------

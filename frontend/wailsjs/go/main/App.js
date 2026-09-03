@@ -74,6 +74,10 @@ export function Info() {
   return window['go']['main']['App']['Info']();
 }
 
+export function ListCheckpointIDs(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ListCheckpointIDs'](arg1, arg2, arg3, arg4);
+}
+
 export function ListCheckpoints(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['ListCheckpoints'](arg1, arg2, arg3, arg4, arg5, arg6);
 }

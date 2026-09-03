@@ -727,24 +727,116 @@ button {
   align-items: center;
 }
 
-/* 툴바 안의 조건 입력 — 전역 label은 세로 grid라 가로형이 따로 필요하다 */
-.filter-field {
+/* 검색 바 — 조건·검색어·실행 버튼을 한 덩어리로 묶는다.
+   따로 놓으면 높이·모서리·배경이 제각각이라 세 개의 남남처럼 보인다:
+   테두리는 바깥 껍데기 하나만 갖고, 내부는 구분선으로만 나눈다. */
+.searchbar {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--input-bg);
+  overflow: hidden;
+}
+
+.searchbar:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* 내부 컨트롤은 자기 테두리·배경·라운드를 버리고 껍데기에 맞춘다 */
+.searchbar input,
+.searchbar select,
+.searchbar button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  height: 28px;
+  font-size: 12px;
+}
+
+.searchbar input:hover,
+.searchbar select:hover,
+.searchbar input:focus,
+.searchbar select:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.sb-field {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin: 0;
+  padding-left: 10px;
+  border-right: 1px solid var(--line);
   font-size: 11.5px;
   color: var(--muted);
   white-space: nowrap;
 }
 
-.filter-field select {
+.sb-field select {
   width: auto;
-  min-width: 62px;
+  min-width: 58px;
+  padding: 0 4px;
+  color: var(--text);
 }
 
-.filter-field select:disabled {
+.sb-field select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.searchbar input {
+  width: 220px;
+  padding: 0 10px;
+}
+
+.searchbar .sb-action {
+  flex: none;
+  padding: 0 14px;
+  border-left: 1px solid var(--line);
+  background: var(--btn2);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.searchbar .sb-action:hover:not(:disabled) {
+  background: var(--btn2-hover);
+}
+
+/* 페이저의 표시 개수 — 검색 바와 같은 톤의 작은 인라인 필드 */
+.pager-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pager-size select {
+  width: auto;
+  min-width: 62px;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+/* 표 위 선택 도구 줄 — 선택 건수(왼쪽)와 선택 액션(오른쪽) */
+.cp-select-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+th input[type="checkbox"] {
+  vertical-align: middle;
 }
 
 /* 표 하단 페이지 이동 */

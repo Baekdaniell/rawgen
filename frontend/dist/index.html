@@ -224,37 +224,47 @@
             <div class="panel-header">
               <h3>Checkpoint 검색</h3>
               <div class="top-actions">
-                <label class="filter-field">flag
-                  <select id="cpFlag">
-                    <option value="1" selected>1</option>
-                    <option value="0">0</option>
-                    <option value="">전체</option>
-                  </select>
-                </label>
-                <label class="filter-field">enable_monitor
-                  <select id="cpMonitor">
-                    <option value="1" selected>1</option>
-                    <option value="0">0</option>
-                    <option value="">전체</option>
-                  </select>
-                </label>
-                <input id="cpSearch" type="text" placeholder="id 또는 이름 (Enter로 조회)" style="width: 220px" />
-                <button id="cpLoad" class="secondary small">조회</button>
+                <div class="searchbar">
+                  <label class="sb-field">flag
+                    <select id="cpFlag">
+                      <option value="1" selected>1</option>
+                      <option value="0">0</option>
+                      <option value="">전체</option>
+                    </select>
+                  </label>
+                  <label class="sb-field">enable_monitor
+                    <select id="cpMonitor">
+                      <option value="1" selected>1</option>
+                      <option value="0">0</option>
+                      <option value="">전체</option>
+                    </select>
+                  </label>
+                  <input id="cpSearch" type="text" placeholder="id 또는 이름 (Enter로 조회)" />
+                  <button id="cpLoad" class="sb-action">조회</button>
+                </div>
               </div>
             </div>
             <p class="hint" id="cpFilterNote">기본 조건은 flag=1 · enable_monitor=1 입니다(운영 중인 대상). 조건을 바꾼 뒤 조회하세요.</p>
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th style="width:60px">선택</th><th style="width:110px">id</th><th>이름</th><th>driver</th><th style="width:90px" id="thEnabled">enabled</th><th style="width:70px">flag</th><th style="width:130px">enable_monitor</th></tr>
+                  <tr><th style="width:60px"><input type="checkbox" id="cpAll" title="이 페이지 전체 선택" /></th><th style="width:110px">id</th><th>이름</th><th>driver</th><th style="width:90px" id="thEnabled">enabled</th><th style="width:70px">flag</th><th style="width:130px">enable_monitor</th></tr>
                 </thead>
                 <tbody id="cpRows"><tr><td colspan="7" class="hint">세션을 고르고 조회하세요.</td></tr></tbody>
               </table>
             </div>
+            <div class="cp-select-bar">
+              <span class="hint" id="cpSelectInfo">선택 0건</span>
+              <div class="top-actions">
+                <button id="cpSelectPage" class="secondary small">이 페이지 전체 선택</button>
+                <button id="cpSelectAll" class="secondary small">조회 결과 전체 선택</button>
+                <button id="cpClearSel" class="secondary small">선택 해제</button>
+              </div>
+            </div>
             <div class="pager">
               <span class="pager-info" id="cpPageInfo">-</span>
               <div class="pager-nav" id="cpPager"></div>
-              <label class="filter-field">표시 개수
+              <label class="pager-size">표시 개수
                 <select id="cpPageSize">
                   <option value="25">25</option>
                   <option value="50">50</option>
@@ -270,8 +280,10 @@
             <div class="panel-header">
               <h3>선택된 대상</h3>
               <div class="top-actions">
-                <input id="cpManual" type="number" placeholder="checkpoint_id 직접 입력 (Enter로 추가)" style="width: 300px" />
-                <button id="cpAdd" class="secondary small">추가</button>
+                <div class="searchbar">
+                  <input id="cpManual" type="number" placeholder="checkpoint_id 직접 입력 (Enter로 추가)" style="width: 260px" />
+                  <button id="cpAdd" class="sb-action">추가</button>
+                </div>
               </div>
             </div>
             <p class="hint">전용 QA checkpoint 대역을 권장합니다. 주입한 (날짜, cp)는 다른 검증의 클린 대조 기준으로 쓸 수 없습니다.</p>
@@ -384,6 +396,7 @@
                 <tbody id="dailyExpected"><tr><td colspan="7" class="hint">Preview를 실행하면 기대값이 표시됩니다.</td></tr></tbody>
               </table>
             </div>
+            <p class="hint" id="dailyExpectedMore"></p>
           </article>
 
           <div class="grid two">

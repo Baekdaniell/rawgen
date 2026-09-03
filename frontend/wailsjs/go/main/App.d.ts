@@ -42,6 +42,8 @@ export function ImportProfilesFile():Promise<profile.ImportSummary>;
 
 export function Info():Promise<main.AppInfo>;
 
+export function ListCheckpointIDs(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.CheckpointIDs>;
+
 export function ListCheckpoints(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number,arg6:number):Promise<main.CheckpointList>;
 
 export function ListProfiles():Promise<Array<profile.Profile>>;

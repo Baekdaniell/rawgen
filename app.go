@@ -352,6 +352,34 @@ func (a *App) ListCheckpoints(profileID, search, flag, enableMonitor string, pag
 	}, nil
 }
 
+// CheckpointIDs는 "조회 결과 전체 선택"용 — 지금 조건에 걸리는 id 전부를 돌려준다.
+// 상한을 넘으면 오류로 알려 조건을 좁히게 한다(전체 선택이 조용히 일부만 고르면 안 된다).
+type CheckpointIDs struct {
+	IDs   []int64 `json:"ids"`
+	Total int64   `json:"total"`
+}
+
+func (a *App) ListCheckpointIDs(profileID, search, flag, enableMonitor string) (*CheckpointIDs, error) {
+	p, err := a.store.Get(profileID)
+	if err != nil {
+		return nil, err
+	}
+	c, err := mariadb.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(a.ctx, 60*time.Second)
+	defer cancel()
+	ids, total, err := c.ListCheckpointIDs(ctx, mariadb.CheckpointFilter{
+		Search: search, Flag: flag, EnableMonitor: enableMonitor,
+	}, 20000)
+	if err != nil {
+		return nil, err
+	}
+	return &CheckpointIDs{IDs: ids, Total: total}, nil
+}
+
 // ---------- Scenario 파일 ----------
 
 // ScenarioFile은 파일에서 불러온 시나리오와 검증 결과를 함께 담는다.

@@ -446,6 +446,7 @@ function resetSessionWork() {
   for (const id of ["metricRows", "metricDays", "metricWarnings", "metricBatches"]) $(id).textContent = "-";
   $("previewWarnings").style.display = "none";
   $("dailyExpected").innerHTML = "";
+  $("dailyExpectedMore").textContent = "";
   $("hourlyDaySelect").innerHTML = "";
   $("hourlyPreview").innerHTML = "";
   $("sampleRows").textContent = "Preview를 실행하세요.";
@@ -595,16 +596,44 @@ function renderSessionList() {
 
 // ---------- Targets ----------
 
+// 칩을 한 번에 다 그리면 전체 선택(수천 건)에서 화면이 멎는다 — 앞부분만 그리고 나머지는 건수로.
+const CHIP_LIMIT = 200;
+// 미리보기 표(cp × 날짜)도 같은 이유로 상한을 둔다.
+const PREVIEW_ROW_LIMIT = 500;
+
+// 긴 id 목록을 요약 문자열로 — 전체 선택이면 수천 개가 한 줄로 쏟아진다.
+function idListText(ids, limit) {
+  if (ids.length <= limit) return ids.join(", ");
+  return `${ids.slice(0, limit).join(", ")} …외 ${(ids.length - limit).toLocaleString()}개`;
+}
+
 function renderSelectedCps() {
   // cp 목록 변경도 시나리오 변경이다 — 확인한 Preview의 대상과 달라지면 게이트를 닫는다.
   invalidatePreviewIfChanged();
   const box = $("cpSelected");
   const ids = [...state.selectedCps].sort((a, b) => a - b);
+  const shown = ids.slice(0, CHIP_LIMIT);
   box.innerHTML = ids.length
-    ? ids.map((id) => `<span>${id} <a href="#" data-remove-cp="${id}" style="color:inherit">×</a></span>`).join("")
+    ? shown.map((id) => `<span>${id} <a href="#" data-remove-cp="${id}" style="color:inherit">×</a></span>`).join("") +
+      (ids.length > CHIP_LIMIT ? `<span class="hint">…외 ${(ids.length - CHIP_LIMIT).toLocaleString()}건 (총 ${ids.length.toLocaleString()}건)</span>` : "")
     : '<span class="hint">선택된 checkpoint가 없습니다.</span>';
+  syncCheckpointSelectionUI();
   refreshScenarioJson();
   updateStepStates();
+}
+
+// 표의 전체 선택 체크박스와 선택 건수 표시를 현재 선택 상태에 맞춘다.
+function syncCheckpointSelectionUI() {
+  const info = $("cpSelectInfo");
+  if (info) info.textContent = `선택 ${state.selectedCps.size.toLocaleString()}건`;
+  const all = $("cpAll");
+  if (!all) return;
+  const page = state.checkpoints.map((cp) => cp.id);
+  const picked = page.filter((id) => state.selectedCps.has(id)).length;
+  all.checked = page.length > 0 && picked === page.length;
+  // 일부만 선택된 페이지는 "전체 선택됨"으로 보이면 안 된다
+  all.indeterminate = picked > 0 && picked < page.length;
+  all.disabled = page.length === 0;
 }
 
 function renderCheckpointTable() {
@@ -624,6 +653,7 @@ function renderCheckpointTable() {
         .join("")
     : `<tr><td colspan="${cols}" class="hint">${state.cpLoaded ? "조건에 맞는 checkpoint가 없습니다." : "세션을 고르고 조회하세요."}</td></tr>`;
   renderCheckpointPager();
+  syncCheckpointSelectionUI();
 }
 
 // 페이지 번호 목록 — 현재 페이지 주변 5개 + 처음/끝(생략은 …)
@@ -696,7 +726,8 @@ function renderHourRows() {
 function buildScenario() {
   return {
     name: state.scenarioName || "gui",
-    checkpointIds: [...state.selectedCps],
+    // Set 삽입 순서가 아니라 id 순 — 해제 후 재선택한 id가 목록 끝에 섞이면 시나리오 JSON이 뒤죽박죽으로 보인다
+    checkpointIds: [...state.selectedCps].sort((a, b) => a - b),
     startDate: $("startDate").value,
     endDate: $("endDate").value,
     timezone: currentProfile()?.timezone || $("pfTimezone").value.trim() || "Asia/Seoul",
@@ -811,7 +842,15 @@ function renderPreview(pv) {
     wb.style.display = "none";
   }
 
-  $("dailyExpected").innerHTML = (pv.days || [])
+  // 전체 선택(수천 cp) 시 cp×날짜 행을 다 그리면 화면이 멎는다 — 앞부분만 그리고 나머지는 건수로.
+  // 리포트/CSV는 Go가 전량으로 만들므로 검증 근거가 줄어드는 게 아니다.
+  const days = pv.days || [];
+  const shownDays = days.slice(0, PREVIEW_ROW_LIMIT);
+  $("dailyExpectedMore").textContent =
+    days.length > PREVIEW_ROW_LIMIT
+      ? `표에는 앞 ${PREVIEW_ROW_LIMIT.toLocaleString()}행만 표시했습니다 (전체 ${days.length.toLocaleString()}행 — 리포트·CSV에는 전부 들어갑니다).`
+      : "";
+  $("dailyExpected").innerHTML = shownDays
     .map((d) => {
       const st = d.stats;
       if (!st.count) {
@@ -823,7 +862,7 @@ function renderPreview(pv) {
     .join("");
 
   const sel = $("hourlyDaySelect");
-  sel.innerHTML = (pv.days || [])
+  sel.innerHTML = shownDays
     .map((d, i) => `<option value="${i}">cp ${d.checkpointId} / ${d.date}</option>`)
     .join("");
   renderHourly(0);
@@ -836,7 +875,7 @@ function renderPreview(pv) {
     `세션: ${p ? p.name : "(미선택)"}  TestOnly=${p ? p.testOnly : "-"}`,
     `ClickHouse: ${p?.clickhouse?.host || "?"}:${p?.clickhouse?.port || "?"} / ${p?.clickhouse?.database || "?"} → ${p?.checkvalueTable || "checkvalue"}`,
     `날짜: ${s.startDate} .. ${s.endDate} (${s.timezone})`,
-    `checkpoint ${s.checkpointIds.length}개: ${s.checkpointIds.join(", ")}`,
+    `checkpoint ${s.checkpointIds.length.toLocaleString()}개: ${idListText(s.checkpointIds, 30)}`,
     `예상 row: ${pv.totalRows.toLocaleString()} / batch ${Math.ceil(pv.totalRows / bs)}개 (size ${bs.toLocaleString()})`,
     `경고 ${pv.warnings?.length || 0}건${pv.warnings?.length ? " — 미리보기 탭에서 확인" : ""}`,
     ``,
@@ -1512,6 +1551,37 @@ $("cpPager").addEventListener(
     if (target === state.cpPage) return;
     await loadCheckpoints(target);
   }),
+);
+
+// 전체 선택 — 페이지 단위는 즉시, 조회 결과 전체는 조건에 걸린 id를 서버에서 받아온다.
+// 표에 보이는 100건만 고르고 "전체"라고 부르면 나머지가 조용히 빠진다.
+function setPageSelection(on) {
+  for (const cp of state.checkpoints) {
+    if (on) state.selectedCps.add(cp.id);
+    else state.selectedCps.delete(cp.id);
+  }
+  renderCheckpointTable();
+  renderSelectedCps();
+}
+
+$("cpAll").addEventListener("change", (e) => setPageSelection(e.target.checked));
+$("cpSelectPage").addEventListener("click", () => setPageSelection(true));
+$("cpClearSel").addEventListener("click", () => {
+  state.selectedCps.clear();
+  renderCheckpointTable();
+  renderSelectedCps();
+});
+bindBusy(
+  "cpSelectAll",
+  async () => {
+    if (!state.cpLoaded) throw new Error("먼저 [조회]로 대상을 불러오세요.");
+    const q = state.cpQuery;
+    const res = await api().ListCheckpointIDs(state.profileId, q.search, q.flag, q.monitor);
+    for (const id of res.ids || []) state.selectedCps.add(id);
+    renderCheckpointTable();
+    renderSelectedCps();
+  },
+  "선택 중...",
 );
 $("cpRows").addEventListener("change", (e) => {
   const id = Number(e.target.dataset.cp);

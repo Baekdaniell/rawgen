@@ -183,6 +183,20 @@ export namespace main {
 	        this.version = source["version"];
 	    }
 	}
+	export class CheckpointIDs {
+	    ids: number[];
+	    total: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CheckpointIDs(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ids = source["ids"];
+	        this.total = source["total"];
+	    }
+	}
 	export class CheckpointList {
 	    items: mariadb.Checkpoint[];
 	    columns: string[];
